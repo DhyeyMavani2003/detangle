@@ -129,33 +129,39 @@ def read_text(path: Path, max_bytes: int = 8 * 1024 * 1024) -> str | None:
 
 
 def discover_known_commands(root: Path, repo_files: set[str]) -> set[str]:
-    """Command names the repo actually defines (for DTR05 stale references)."""
-    cmds: set[str] = set()
-    pkg = root / "package.json"
-    if pkg.is_file():
-        import json
+    """Command names the repo defines ANYWHERE (for DTR05 stale references).
 
-        try:
-            data = json.loads(pkg.read_text(encoding="utf-8"))
+    Aggregated across every package.json / Makefile / justfile in the tree —
+    monorepo instructions routinely say "run X from packages/foo/".
+    """
+    import json
+
+    cmds: set[str] = set()
+    for rp in repo_files:
+        name = rp.rsplit("/", 1)[-1]
+        if name == "package.json":
+            try:
+                data = json.loads((root / rp).read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                continue
             scripts = data.get("scripts", {})
             if isinstance(scripts, dict):
-                for name in scripts:
-                    cmds.add(f"npm run {name}")
-                    cmds.add(f"yarn {name}")
-                    cmds.add(f"pnpm {name}")
-                    cmds.add(f"pnpm run {name}")
-                    cmds.add(f"bun run {name}")
-        except (json.JSONDecodeError, OSError):
-            pass
-    mk = root / "Makefile"
-    if mk.is_file():
-        text = read_text(mk) or ""
-        for m in re.finditer(r"^([A-Za-z0-9_.-]+)\s*:(?!=)", text, re.MULTILINE):
-            cmds.add(f"make {m.group(1)}")
-    for f in ("pyproject.toml",):
-        p = root / f
-        if p.is_file():
-            text = read_text(p) or ""
+                for sname in scripts:
+                    cmds.add(f"npm run {sname}")
+                    cmds.add(f"yarn {sname}")
+                    cmds.add(f"pnpm {sname}")
+                    cmds.add(f"pnpm run {sname}")
+                    cmds.add(f"bun run {sname}")
+        elif name in ("Makefile", "makefile", "GNUmakefile"):
+            text = read_text(root / rp) or ""
+            for m in re.finditer(r"^([A-Za-z0-9_.-]+)\s*:(?!=)", text, re.MULTILINE):
+                cmds.add(f"make {m.group(1)}")
+        elif name in ("justfile", "Justfile", ".justfile"):
+            text = read_text(root / rp) or ""
+            for m in re.finditer(r"^([A-Za-z0-9_-]+)(?:\s+[^:]*)?:(?!=)", text, re.MULTILINE):
+                cmds.add(f"just {m.group(1)}")
+        elif name == "pyproject.toml":
+            text = read_text(root / rp) or ""
             in_scripts = False
             for line in text.splitlines():
                 if re.match(r"\[(project\.scripts|tool\.poetry\.scripts)\]", line.strip()):
@@ -167,11 +173,6 @@ def discover_known_commands(root: Path, repo_files: set[str]) -> set[str]:
                     m = re.match(r"([A-Za-z0-9_-]+)\s*=", line.strip())
                     if m:
                         cmds.add(m.group(1))
-    just = root / "justfile"
-    if just.is_file():
-        text = read_text(just) or ""
-        for m in re.finditer(r"^([A-Za-z0-9_-]+)(?:\s+[^:]*)?:(?!=)", text, re.MULTILINE):
-            cmds.add(f"just {m.group(1)}")
     return cmds
 
 
