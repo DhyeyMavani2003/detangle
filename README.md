@@ -46,7 +46,7 @@ conflict is **lint time**, not inference time.
 
 ## What it checks
 
-21 rules across five classes (see [docs/taxonomy.md](docs/taxonomy.md)):
+24 rules across five classes (see [docs/taxonomy.md](docs/taxonomy.md)):
 
 | Class | Codes | Examples |
 |---|---|---|

@@ -238,27 +238,39 @@ class StaleReferenceDetector(Detector):
                         confidence=0.8,
                     )
                 )
-            for m in _CMD_RE.finditer(text):
-                cmd = " ".join(m.group(1).split())
-                if cmds and cmd not in cmds:
-                    key = (u.file.path, cmd)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    out.append(
-                        Finding(
-                            code="DTR05",
-                            message=(
-                                f"References the command '{cmd}', which is not defined in "
-                                "this repository's scripts/targets."
-                            ),
-                            severity=Severity.WARNING,
-                            evidence=[Evidence(u.span, u.text, f"mentions {cmd}")],
-                            units=[u],
-                            suggestion="Fix the command name or define the script/target.",
-                            confidence=0.8,
+        # command references are matched on RAW file text: units have their
+        # backticks stripped, and the backticks are what distinguishes a
+        # command reference from prose ("make sure" is not `make sure`)
+        for cf in ctx.corpus.files:
+            for lineno, line in enumerate(cf.text.split("\n"), start=1):
+                for m in _CMD_RE.finditer(line):
+                    cmd = " ".join(m.group(1).split())
+                    if cmds and cmd not in cmds:
+                        key = (cf.path, cmd)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        body_start = int(cf.meta.get("body_start", 1))
+                        ln = lineno + (body_start - 1 if body_start > 1 else 0)
+                        out.append(
+                            Finding(
+                                code="DTR05",
+                                message=(
+                                    f"References the command '{cmd}', which is not defined "
+                                    "in this repository's scripts/targets."
+                                ),
+                                severity=Severity.WARNING,
+                                evidence=[
+                                    Evidence(
+                                        SourceSpan(cf.path, ln, ln),
+                                        line.strip()[:160],
+                                        f"mentions {cmd}",
+                                    )
+                                ],
+                                suggestion="Fix the command name or define the script/target.",
+                                confidence=0.8,
+                            )
                         )
-                    )
         return out
 
 

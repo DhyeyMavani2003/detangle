@@ -85,7 +85,7 @@ def _negation_dense(pair: UnitPair) -> bool:
 
 def run_nli_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) -> list[Finding]:
     try:
-        scorer = NliScorer()
+        scorer = NliScorer(cfg.nli_model)
     except ImportError:
         ctx.corpus.notes.append(
             "NLI lane requested but sentence-transformers is not installed — "

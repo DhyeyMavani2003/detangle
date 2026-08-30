@@ -214,7 +214,10 @@ def precedence(a: InstructionUnit, b: InstructionUnit) -> PrecedenceRelation:
 
     if eco == Ecosystem.CLAUDE_CODE and mech == "rules":
         if fa.tier != fb.tier:
-            hi = a if fa.tier < fb.tier else b
+            # rules are POSITIONAL: project rules load after user rules, so
+            # the HIGHER memory-tier number (project=20 > user=10) wins here —
+            # unlike name-shadowing mechanisms where lower tier wins
+            hi = a if fa.tier > fb.tier else b
             return PrecedenceRelation(
                 PrecedenceKind.POSITIONAL,
                 higher=hi,

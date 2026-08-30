@@ -213,7 +213,7 @@ def iter_sentences(blocks: list[Block]) -> list[Sentence]:
         )
         sentences = split_sentences(prose)
         for s in sentences:
-            s = s.replace("․ ", ". ").replace("␣", " ")
+            s = s.replace("␣", " ").replace("․ ", ". ")
             if len(s) < 3:
                 continue
             out.append(Sentence(s, b.start_line, b.end_line, b.heading_path, b.kind == "bullet"))

@@ -28,7 +28,7 @@ PARSERS: dict[str, type[BaseParser]] = {
 def discover(cfg: Config) -> Corpus:
     """Run all enabled ecosystem parsers over the repo."""
     corpus = Corpus(root=cfg.root)
-    corpus.repo_files = set(walk_repo(cfg.root, cfg.ignore_globs))
+    corpus.repo_files = set(walk_repo(cfg.root, cfg.ignore_globs, cfg.respect_gitignore))
     corpus.known_commands = discover_known_commands(cfg.root, corpus.repo_files)
     for name in cfg.ecosystems:
         parser_cls = PARSERS.get(name)

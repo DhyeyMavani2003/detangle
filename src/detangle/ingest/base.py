@@ -68,15 +68,45 @@ _DEFAULT_SKIP_DIRS = {
 }
 
 
-def walk_repo(root: Path, ignore_globs: tuple[str, ...] = ()) -> list[str]:
+def _load_gitignore(root: Path) -> tuple[str, ...]:
+    """Top-level .gitignore patterns (negations skipped — precision-first)."""
+    gi = root / ".gitignore"
+    if not gi.is_file():
+        return ()
+    patterns: list[str] = []
+    try:
+        for line in gi.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("!"):
+                continue
+            patterns.append(line)
+    except OSError:
+        return ()
+    return tuple(patterns)
+
+
+def walk_repo(
+    root: Path, ignore_globs: tuple[str, ...] = (), respect_gitignore: bool = True
+) -> list[str]:
     """Repo-relative posix paths of all files, skipping vendored/derived dirs."""
+    from ..globs import glob_match
+
+    gitignore = _load_gitignore(root) if respect_gitignore else ()
     out: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _DEFAULT_SKIP_DIRS]
+        if gitignore:
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if not any(glob_match(g, rel(root, Path(dirpath) / d) + "/x") for g in gitignore)
+            ]
         for fn in filenames:
             p = Path(dirpath) / fn
             r = rel(root, p)
             if any(fnmatch.fnmatch(r, g) for g in ignore_globs):
+                continue
+            if gitignore and any(glob_match(g, r) for g in gitignore):
                 continue
             out.append(r)
     return sorted(out)

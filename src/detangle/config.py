@@ -38,6 +38,7 @@ class Config:
     user_dir: Path | None = None  # simulated ~ for user-global layers (tests/CI)
     jury_model: str = "claude-haiku-4-5-20251001"
     jury_max_pairs: int = 200
+    nli_model: str = "cross-encoder/nli-deberta-v3-small"
     cache_dir: Path | None = None
     ignore_globs: tuple[str, ...] = ()  # config files to skip entirely
     respect_gitignore: bool = True
@@ -142,5 +143,9 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
     if isinstance(jury, dict):
         cfg.jury_model = str(jury.get("model", cfg.jury_model))
         cfg.jury_max_pairs = int(jury.get("max_pairs", cfg.jury_max_pairs))
+
+    nli = tbl.get("nli", {})
+    if isinstance(nli, dict):
+        cfg.nli_model = str(nli.get("model", cfg.nli_model))
 
     return cfg

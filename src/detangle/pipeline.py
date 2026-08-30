@@ -65,15 +65,16 @@ def scan(cfg: Config) -> ScanResult:
             continue
         findings.extend(enabled_findings(ctx, det.run(ctx)))
 
-    # optional lanes refine/extend deterministic findings
+    # optional lanes refine/extend deterministic findings; their output goes
+    # through the same rule-enable/severity-override filter as detectors
     if cfg.lane_nli:
         from .lanes.nli import run_nli_lane
 
-        findings = run_nli_lane(cfg, ctx, findings)
+        findings = enabled_findings(ctx, run_nli_lane(cfg, ctx, findings))
     if cfg.lane_jury:
         from .lanes.jury import run_jury_lane
 
-        findings = run_jury_lane(cfg, ctx, findings)
+        findings = enabled_findings(ctx, run_jury_lane(cfg, ctx, findings))
 
     findings = dedupe(findings)
     if not cfg.include_soft:
