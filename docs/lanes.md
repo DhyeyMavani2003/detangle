@@ -127,15 +127,36 @@ deterministic lane.
 ## Lane 3: jury (optional) — adjudication, not discovery
 
 ```bash
-pip install 'detangle[jury]'     # the anthropic SDK
-export ANTHROPIC_API_KEY=sk-ant-...
 detangle scan --jury             # or --nli --jury for banded candidates
 ```
 
 The jury lane implements the jury protocol distilled from the LLM-as-judge reliability
 literature. v0.1 ships a **single juror** (the protocol shape is the multi-juror one, so
-additional jurors are additive later). Default model: `claude-haiku-4-5-20251001` — a pinned
-snapshot, configurable via `[detangle.jury] model`.
+additional jurors are additive later).
+
+### Backends
+
+The juror is backend-agnostic — `[detangle.jury] backend` selects the transport
+(default `"auto"`):
+
+| backend | needs | default model | notes |
+|---|---|---|---|
+| `claude-cli` | the `claude` executable on PATH | `haiku` | **Zero-config**: `claude -p` print mode rides your existing Claude Code subscription. Runs in an empty scratch dir so the juror never ingests the scanned repo's own CLAUDE.md. Validated end-to-end in this repo. |
+| `anthropic` | `detangle[jury]` + `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` | The Anthropic API; pin snapshots. |
+| `openai` | `[detangle.jury] base_url` (+ optional key via `api_key_env`) | `gpt-5-mini` | Any OpenAI-compatible `/chat/completions` endpoint — OpenAI, DeepSeek, Gemini's compat layer, **Ollama/vLLM for fully-local juries** (`base_url = "http://localhost:11434/v1"`, no key). Stdlib urllib; zero extra dependencies. |
+
+`auto` picks the first available: `ANTHROPIC_API_KEY` → anthropic, else `claude` on
+PATH → claude-cli, else a configured `base_url` → openai, else the lane skips with a note.
+The backend and model are part of the verdict-cache key, so switching either invalidates
+cached verdicts — never silently mixes them.
+
+```toml
+[detangle.jury]
+backend = "openai"                      # or "claude-cli" / "anthropic" / "auto"
+base_url = "http://localhost:11434/v1"  # openai backend only
+api_key_env = "OPENAI_API_KEY"          # openai backend only; unset env = no auth header
+model = "qwen3:8b"
+```
 
 ### Protocol summary
 
@@ -217,17 +238,40 @@ have been observed to yield 80 distinct outputs). What actually makes jury resul
 Pin the model snapshot in `[detangle.jury]` and treat any model migration as a calibration
 event — model aliases drift (a documented case degraded 84% → 51% in three months).
 
+### Measured results (live validation, 2026-08-30)
+
+The full cascade was validated end-to-end in this repository with the `claude-cli`
+backend (single `haiku` juror) on the novel-phrasing holdout (`python -m
+benchmarks.run_eval --holdout --lanes nli,jury`):
+
+| configuration | holdout recall | holdout FP rate |
+|---|---|---|
+| deterministic only | 5/26 (19.2%) | 0/17 (0.0%) |
+| + NLI auto-clear + jury | **10/26 (38.5%)** | 3/17 (17.6%) |
+
+The jury doubled recall. Every measured false positive was a CONDITIONAL_CONFLICT
+verdict — which is why jury conditional-conflict findings are emitted at **advisory**
+severity (never CI-failing), while jury CONTRADICTORY findings are warnings. The verdict
+cache made repeat scans free (3m22s → 8.8s on the seeded fixture) and byte-identical.
+Verdicts whose ``conflict_type`` is ``numeric`` surface as DTC03; other CONTRADICTORY
+verdicts as DTC01; CONDITIONAL_CONFLICT as DTC02 (or DTP03 when exactly one side is a
+deliberate carve-out — the deterministic router's rule, applied consistently).
+
 ### Failure behavior
 
-Missing `anthropic` package or missing `ANTHROPIC_API_KEY` skips the lane with a warning note;
-the scan still completes. The key is read from the environment only — it is never written to
-disk, and never required for the deterministic or NLI lanes.
+No available backend (no key, no CLI, no base_url) skips the lane with a warning note;
+the scan still completes. API keys are read from the environment only — never written to
+disk, and never required for the deterministic or NLI lanes. Transient backend failures
+(network, CLI errors) are never cached and never produce findings; after three consecutive
+failures the lane aborts with a note.
 
 ```bash
-# local
+# local, API backend
 export ANTHROPIC_API_KEY=sk-ant-...
 
-# GitHub Actions
+# local, subscription backend: nothing to set — just have Claude Code installed
+
+# GitHub Actions (API backend)
 env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```

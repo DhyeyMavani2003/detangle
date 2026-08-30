@@ -38,6 +38,9 @@ class Config:
     user_dir: Path | None = None  # simulated ~ for user-global layers (tests/CI)
     jury_model: str = "claude-haiku-4-5-20251001"
     jury_max_pairs: int = 200
+    jury_backend: str = "auto"  # auto | anthropic | claude-cli | openai
+    jury_base_url: str = ""  # for the openai-compatible backend
+    jury_api_key_env: str = "OPENAI_API_KEY"
     nli_model: str = "cross-encoder/nli-deberta-v3-small"
     cache_dir: Path | None = None
     ignore_globs: tuple[str, ...] = ()  # config files to skip entirely
@@ -155,6 +158,14 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
     if isinstance(jury, dict):
         cfg.jury_model = str(jury.get("model", cfg.jury_model))
         cfg.jury_max_pairs = as_int("jury.max_pairs", jury.get("max_pairs", cfg.jury_max_pairs))
+        backend = str(jury.get("backend", cfg.jury_backend))
+        if backend not in ("auto", "anthropic", "claude-cli", "openai"):
+            raise bad(
+                f"jury.backend '{backend}' must be one of: auto, anthropic, claude-cli, openai"
+            )
+        cfg.jury_backend = backend
+        cfg.jury_base_url = str(jury.get("base_url", cfg.jury_base_url))
+        cfg.jury_api_key_env = str(jury.get("api_key_env", cfg.jury_api_key_env))
 
     nli = tbl.get("nli", {})
     if isinstance(nli, dict):

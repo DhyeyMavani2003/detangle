@@ -18,14 +18,15 @@ is the multi-juror one so more jurors are additive):
 - Evidence validation: quoted spans must actually occur in the source
   texts, else the verdict is rejected.
 
-Requires `detangle[jury]` and ANTHROPIC_API_KEY.
+Backend-agnostic: runs on the Anthropic API, the Claude Code CLI in print
+mode (your existing subscription, zero configuration), or any
+OpenAI-compatible endpoint — see lanes/backends.py.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 
 from ..config import Config
@@ -34,6 +35,7 @@ from ..findings import Finding, pair_evidence
 from ..ir import UnitPair
 from ..similarity import text_similarity
 from ..taxonomy import Severity
+from .backends import Backend, JuryError, make_backend
 from .cachekey import make_cache
 
 VERDICTS = (
@@ -136,54 +138,72 @@ def _evidence_valid(data: dict, pair: UnitPair, swapped: bool) -> bool:
     return occurs(ea, a.text) and occurs(eb, b.text)
 
 
-class JuryError(RuntimeError):
-    pass
+class Juror:
+    """Backend-agnostic juror: prompts + parsing here, transport in the backend."""
 
+    def __init__(self, backend: Backend):
+        self.backend = backend
 
-class AnthropicJuror:
-    def __init__(self, model: str):
-        try:
-            import anthropic  # type: ignore[import-not-found]
-        except ImportError as e:
-            raise JuryError(
-                "jury lane requires the anthropic package — install `detangle[jury]`"
-            ) from e
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            raise JuryError("jury lane requires ANTHROPIC_API_KEY in the environment")
-        self.client = anthropic.Anthropic()
-        self.model = model
+    @property
+    def ident(self) -> str:
+        return self.backend.ident
 
     def judge(self, pair: UnitPair, swapped: bool) -> dict | None:
-        resp = self.client.messages.create(
-            model=self.model,
-            max_tokens=400,
-            temperature=0,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": _pair_prompt(pair, swapped)}],
-        )
-        text = "".join(getattr(b, "text", "") for b in resp.content)
+        text = self.backend.complete(SYSTEM_PROMPT, _pair_prompt(pair, swapped))
         return _parse_verdict(text)
 
 
-def adjudicate(juror: AnthropicJuror, pair: UnitPair, cache) -> dict:
+def adjudicate(juror: Juror, pair: UnitPair, cache) -> dict:
     """Swap-stable verdict for one pair, cached. Returns
     {"verdict": ..., "abstained": bool, ...}."""
-    key = cache.key(juror.model, _PROMPT_HASH, f"{pair.key}|swap-both")
+    key = cache.key(juror.ident, _PROMPT_HASH, f"{pair.key}|swap-both")
     hit = cache.get(key)
     if hit is not None:
         return hit
 
-    v1 = juror.judge(pair, swapped=False)
-    v2 = juror.judge(pair, swapped=True)
+    try:
+        v1 = juror.judge(pair, swapped=False)
+        v2 = juror.judge(pair, swapped=True)
+    except JuryError as e:
+        # transport failure: do not cache, do not abstain-cache a transient
+        return {
+            "verdict": "DISTINCT",
+            "abstained": True,
+            "reason": f"backend error: {e}",
+            "transient": True,
+        }
     result: dict
+    conflict_group = {"CONTRADICTORY", "CONDITIONAL_CONFLICT"}
     if v1 is None or v2 is None:
         result = {"verdict": "DISTINCT", "abstained": True, "reason": "unparseable output"}
-    elif v1["verdict"] != v2["verdict"]:
+    elif v1["verdict"] != v2["verdict"] and not (
+        v1["verdict"] in conflict_group and v2["verdict"] in conflict_group
+    ):
         result = {
             "verdict": "DISTINCT",
             "abstained": True,
             "reason": f"order instability ({v1['verdict']} vs {v2['verdict']})",
         }
+    elif v1["verdict"] != v2["verdict"]:
+        # both orderings agree a conflict exists but differ on its flavor:
+        # take the weaker (conditional) reading with the lower confidence —
+        # swap consistency is enforced at the verdict-GROUP level
+        weaker = v1 if v1["verdict"] == "CONDITIONAL_CONFLICT" else v2
+        if not _evidence_valid(weaker, pair, swapped=weaker is v2):
+            result = {
+                "verdict": "DISTINCT",
+                "abstained": True,
+                "reason": "evidence not found in source",
+            }
+        else:
+            result = {
+                **weaker,
+                "abstained": False,
+                "swap_softened": True,
+                "confidence": min(
+                    float(v1.get("confidence", 0.6)), float(v2.get("confidence", 0.6))
+                ),
+            }
     elif not _evidence_valid(v1, pair, swapped=False):
         result = {
             "verdict": "DISTINCT",
@@ -196,16 +216,21 @@ def adjudicate(juror: AnthropicJuror, pair: UnitPair, cache) -> dict:
     return result
 
 
-_VERDICT_TO_CODE = {
-    "CONTRADICTORY": "DTC01",
-    "CONDITIONAL_CONFLICT": "DTC02",
-    "REDUNDANT": "DTR01",
-}
+def _verdict_to_code(verdict: str, conflict_type: str) -> str | None:
+    """Map (verdict, conflict_type) into the taxonomy: a numeric clash the
+    jury judged CONTRADICTORY is a DTC03, not a generic DTC01."""
+    if verdict == "CONTRADICTORY":
+        return "DTC03" if conflict_type == "numeric" else "DTC01"
+    if verdict == "CONDITIONAL_CONFLICT":
+        return "DTC03" if conflict_type == "numeric" else "DTC02"
+    if verdict == "REDUNDANT":
+        return "DTR01"
+    return None
 
 
 def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) -> list[Finding]:
     try:
-        juror = AnthropicJuror(cfg.jury_model)
+        juror = Juror(make_backend(cfg))
     except JuryError as e:
         ctx.corpus.notes.append(f"{e} — lane skipped")
         return findings
@@ -226,9 +251,19 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
     banded = banded[: cfg.jury_max_pairs]
 
     calls = 0
+    transient_failures = 0
     for pair in banded:
         result = adjudicate(juror, pair, cache)
         calls += 1
+        if result.get("transient"):
+            transient_failures += 1
+            if transient_failures >= 3:
+                ctx.corpus.notes.append(
+                    f"jury lane: aborting after {transient_failures} backend failures "
+                    f"({result.get('reason', '')})"
+                )
+                break
+            continue
         if result.get("abstained"):
             findings.append(
                 Finding(
@@ -248,10 +283,27 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
                 )
             )
             continue
-        code = _VERDICT_TO_CODE.get(result["verdict"])
+        code = _verdict_to_code(result["verdict"], str(result.get("conflict_type", "")))
         if code is None:
             continue
-        sev = Severity.WARNING if code.startswith("DTC") else Severity.ADVISORY
+        # the deterministic carve-out gate applies to jury verdicts too: a
+        # conditional conflict where exactly one side is a deliberate
+        # exception ("unless ...", "only when ...") is DTP03-fragile, not a
+        # conflict — this is the router's rule, kept consistent here
+        if code == "DTC02":
+            from ..extract import has_exception_marker
+
+            exc_a = has_exception_marker(pair.a.text)
+            exc_b = has_exception_marker(pair.b.text)
+            if exc_a != exc_b:
+                code = "DTP03"
+        # measured on the novel-phrasing holdout (single haiku juror): benign
+        # false positives concentrate entirely in CONDITIONAL_CONFLICT — the
+        # jury's "maybe" bucket — so those land at advisory, never CI-blocking
+        if result["verdict"] == "CONDITIONAL_CONFLICT" or code == "DTP03":
+            sev = Severity.ADVISORY
+        else:
+            sev = Severity.WARNING
         findings.append(
             Finding(
                 code=code,
@@ -276,5 +328,5 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
             )
         )
     cache.save()
-    ctx.corpus.notes.append(f"jury lane: adjudicated {calls} pairs with {cfg.jury_model}")
+    ctx.corpus.notes.append(f"jury lane: adjudicated {calls} pair(s) with {juror.ident}")
     return findings

@@ -69,12 +69,22 @@ def materialize(tree: dict[str, str], root: Path) -> None:
         p.write_text(text, encoding="utf-8")
 
 
-def scan_tree(tree: dict[str, str]) -> ScanResult:
-    """Materialize into a temp dir and run the full deterministic pipeline."""
+def scan_tree(
+    tree: dict[str, str], lanes: tuple[str, ...] = (), jury_max_pairs: int = 6
+) -> ScanResult:
+    """Materialize into a temp dir and run the pipeline.
+
+    ``lanes`` may include "nli" and/or "jury" to run the hybrid cascade
+    (jury calls are capped per tree by ``jury_max_pairs``).
+    """
     with tempfile.TemporaryDirectory(prefix="detangle-bench-") as td:
         root = Path(td)
         materialize(tree, root)
-        return scan(Config(root=root))
+        cfg = Config(root=root)
+        cfg.lane_nli = "nli" in lanes
+        cfg.lane_jury = "jury" in lanes
+        cfg.jury_max_pairs = jury_max_pairs
+        return scan(cfg)
 
 
 def _touches(finding, files: set[str]) -> bool:
@@ -318,8 +328,37 @@ def holdout_detected(result: ScanResult, case: dict) -> bool:
     )
 
 
-def evaluate_holdout(case_ids: list[str] | None = None) -> dict:
-    """Run the hand-authored holdout set; returns the JSON-serializable report."""
+# the LLM jury maps verdicts through its own (coarser) code vocabulary, so a
+# numeric clash it judges may surface as DTC01/DTC02 where the case author
+# expected DTC03. Class-lenient scoring credits ANY conflict-class code on the
+# right evidence — reported alongside strict, never instead of it.
+_LENIENT_CONFLICT_CODES = frozenset(
+    {"DTC01", "DTC02", "DTC03", "DTC04", "DTC05", "DTC08", "DTP02", "DTP03", "DTP04"}
+)
+
+
+def holdout_detected_lenient(result: ScanResult, case: dict) -> bool:
+    """Class-lenient detection: for conflict-class cases, any conflict-class
+    finding touching every involved file counts. DTR/DTS cases stay strict."""
+    if holdout_detected(result, case):
+        return True
+    primary = list(case["expected_codes"])[0]
+    if primary[:3] not in ("DTC", "DTP"):
+        return False
+    involved = list(case["involved_files"])
+    return any(
+        f.code in _LENIENT_CONFLICT_CODES and all(_touches_file(f, p) for p in involved)
+        for f in result.findings
+    )
+
+
+def evaluate_holdout(case_ids: list[str] | None = None, lanes: tuple[str, ...] = ()) -> dict:
+    """Run the hand-authored holdout set; returns the JSON-serializable report.
+
+    Pass ``lanes=("nli", "jury")`` to measure the hybrid cascade instead of
+    the deterministic lane alone (needs the NLI extra / a jury backend; slow
+    — every not-cleared pair costs two LLM calls).
+    """
     t0 = time.perf_counter()
     wanted = set(case_ids) if case_ids else None
 
@@ -328,16 +367,19 @@ def evaluate_holdout(case_ids: list[str] | None = None) -> dict:
     for case in CONFLICT_CASES:
         if wanted is not None and case["id"] not in wanted:
             continue
-        result = scan_tree(dict(case["tree"]))  # type: ignore[arg-type]
+        result = scan_tree(dict(case["tree"]), lanes=lanes)  # type: ignore[arg-type]
         hit = holdout_detected(result, case)
+        lenient_hit = holdout_detected_lenient(result, case)
         primary = list(case["expected_codes"])[0]
-        stats = per_code.setdefault(primary, {"cases": 0, "detected": 0})
+        stats = per_code.setdefault(primary, {"cases": 0, "detected": 0, "lenient": 0})
         stats["cases"] += 1
         stats["detected"] += int(hit)
+        stats["lenient"] += int(lenient_hit)
         conflict_results.append(
             {
                 "id": case["id"],
                 "detected": hit,
+                "detected_lenient": lenient_hit,
                 "expected_codes": list(case["expected_codes"]),
                 "codes_seen": sorted({f.code for f in result.findings}),
                 "description": case["description"],
@@ -348,7 +390,7 @@ def evaluate_holdout(case_ids: list[str] | None = None) -> dict:
     for case in BENIGN_CASES:
         if wanted is not None and case["id"] not in wanted:
             continue
-        result = scan_tree(dict(case["tree"]))  # type: ignore[arg-type]
+        result = scan_tree(dict(case["tree"]), lanes=lanes)  # type: ignore[arg-type]
         fp_codes = sorted({f.code for f in result.findings if f.code in HOLDOUT_FP_CODES})
         benign_results.append(
             {
@@ -361,6 +403,7 @@ def evaluate_holdout(case_ids: list[str] | None = None) -> dict:
 
     n_conflicts = len(conflict_results)
     n_detected = sum(1 for c in conflict_results if c["detected"])
+    n_lenient = sum(1 for c in conflict_results if c.get("detected_lenient"))
     n_benign = len(benign_results)
     n_fps = sum(1 for b in benign_results if b["false_positive"])
     return {
@@ -378,6 +421,8 @@ def evaluate_holdout(case_ids: list[str] | None = None) -> dict:
             "conflict_cases": n_conflicts,
             "detected": n_detected,
             "recall": round(n_detected / n_conflicts, 4) if n_conflicts else 0.0,
+            "detected_lenient": n_lenient,
+            "recall_lenient": round(n_lenient / n_conflicts, 4) if n_conflicts else 0.0,
             "benign_cases": n_benign,
             "false_positives": n_fps,
             "fp_rate": round(n_fps / n_benign, 4) if n_benign else 0.0,
@@ -469,10 +514,17 @@ def render_holdout_table(report: dict) -> str:
             lines.append(f"  {b['id']:<34} fired: {', '.join(b['conflict_codes_seen'])}")
         lines.append("")
     lines.append(
-        f"holdout recall: {t['detected']}/{t['conflict_cases']} ({t['recall']:.1%})   "
+        f"holdout recall: {t['detected']}/{t['conflict_cases']} ({t['recall']:.1%}) strict, "
+        f"{t.get('detected_lenient', t['detected'])}/{t['conflict_cases']} "
+        f"({t.get('recall_lenient', t['recall']):.1%}) class-lenient   "
         f"holdout FP rate: {t['false_positives']}/{t['benign_cases']} ({t['fp_rate']:.1%})"
     )
     lines.append(f"scoring: {report['scoring']}")
+    lines.append(
+        "class-lenient credits any conflict-class code on the right evidence — the jury "
+        "labels through its own verdict vocabulary, so e.g. a numeric clash may surface "
+        "as DTC01/DTC02"
+    )
     return "\n".join(lines)
 
 
@@ -494,6 +546,12 @@ def main(argv: list[str] | None = None) -> int:
         "--holdout",
         action="store_true",
         help="run only the hand-authored holdout set (it is part of the default run too)",
+    )
+    p.add_argument(
+        "--lanes",
+        default="",
+        help='comma-separated optional lanes for the HOLDOUT scans, e.g. "nli,jury" '
+        "(the mutation suite always runs deterministic-only; jury needs a backend)",
     )
     p.add_argument("--trees", default=None, help="comma-separated tree names (default: all)")
     p.add_argument(
@@ -523,7 +581,8 @@ def main(argv: list[str] | None = None) -> int:
         combined["mutation_suite"] = mutation_report
         print(render_table(mutation_report))
         print()
-    holdout_report = evaluate_holdout()
+    lanes = tuple(x.strip() for x in args.lanes.split(",") if x.strip())
+    holdout_report = evaluate_holdout(lanes=lanes)
     combined["holdout"] = holdout_report
     print(render_holdout_table(holdout_report))
     if args.json:

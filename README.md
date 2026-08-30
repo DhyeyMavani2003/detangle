@@ -81,8 +81,15 @@ git clone https://github.com/DhyeyMavani2003/detangle
 cd detangle
 pip install .              # deterministic core (no ML dependencies)
 pip install '.[nli]'       # + local NLI cross-encoder lane
-pip install '.[jury]'      # + LLM jury lane (needs ANTHROPIC_API_KEY)
+pip install '.[jury]'      # + the anthropic SDK (only for the API jury backend)
 ```
+
+The LLM jury runs on **whichever backend you have** (`[detangle.jury] backend`, default
+`auto`): the **Claude Code CLI** (`claude -p` — your existing subscription, zero extra
+config or dependencies), the **Anthropic API** (`detangle[jury]` + `ANTHROPIC_API_KEY`),
+or **any OpenAI-compatible endpoint** — OpenAI, DeepSeek, Gemini's compat layer, or a
+fully local Ollama/vLLM server — via stdlib HTTP, no SDK needed. See
+[docs/lanes.md](docs/lanes.md).
 
 (`pip install git+https://github.com/DhyeyMavani2003/detangle` also works once this code
 is on the default branch.)
@@ -92,7 +99,7 @@ Once published to PyPI, this becomes:
 ```bash
 pip install detangle            # deterministic core (no ML dependencies)
 pip install 'detangle[nli]'     # + local NLI cross-encoder lane
-pip install 'detangle[jury]'    # + LLM jury lane (needs ANTHROPIC_API_KEY)
+pip install 'detangle[jury]'    # + the anthropic SDK (API jury backend only)
 ```
 
 ## Use
@@ -166,15 +173,27 @@ python -m benchmarks.run_eval
   phrased in vocabulary the deterministic lane understands — not generalization.
 - **Holdout (novel phrasings):** hand-authored conflicts in realistic, hedged, colloquial
   wording written *without* consulting detangle's lexicons, plus benign-but-tricky trees.
-  Current: **recall 5/26 (19%), false positives 0/17**.
+  Measured (2026-08-30, all lanes validated live end-to-end):
 
-That gap is the honest shape of a deterministic lane, and it is why the research plan is a
-*multiplex*: the deterministic core catches the crisp classes (numerics, duplicates,
-matched-frame contradictions, structural/precedence/budget issues) at near-zero false-positive
-cost, while paraphrased and hedged conflicts are exactly what the optional [NLI and jury
-lanes](docs/lanes.md) exist to recover. Adversarially-verified false-positive shapes from
-real repos (target-vs-trigger numeric bands, do-X-instead refinements, purpose clauses) are
-encoded as permanent precision gates and regression tests.
+  | configuration | holdout recall | holdout FPs | cost |
+  |---|---|---|---|
+  | deterministic only (default) | 5/26 (19%) | **0/17 (0%)** | free, offline, ~50ms/tree |
+  | + NLI + jury (single `haiku` juror via `claude -p`) | **10/26 (38%)** | 3/17 (18%)* | ~12 min for all 43 trees |
+
+  \* every measured jury false positive is a CONDITIONAL_CONFLICT — the model's "maybe"
+  bucket — so jury conditional-conflict findings land at **advisory** severity and never
+  fail CI; the deterministic lane's error-severity findings remain FP-free.
+
+That split is the honest shape of the multiplex, and it matches the research it was built
+from: the deterministic core catches the crisp classes (numerics, duplicates, matched-frame
+contradictions, structural/precedence/budget issues) at zero false-positive cost; the jury
+**doubles recall** on hedged/colloquial phrasings at LLM-typical precision, quarantined below
+the CI-failing line. The residual misses are mostly *candidate formation* (one side of the
+conflict not being recognized as an instruction at all), not adjudication — which is where a
+stronger extraction pass and 3-juror escalation panels (roadmap) aim next.
+Adversarially-verified false-positive shapes from real repos (target-vs-trigger numeric
+bands, do-X-instead refinements, purpose clauses) are encoded as permanent precision gates
+and regression tests.
 
 ## Roadmap
 

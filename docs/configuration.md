@@ -48,8 +48,11 @@ DTC08 = "info"       # override a rule's severity
 DTC01 = true         # explicit "keep enabled" (no-op)
 
 [detangle.jury]
+backend = "auto"        # auto | claude-cli | anthropic | openai
 model = "claude-haiku-4-5-20251001"
 max_pairs = 200
+# base_url = "http://localhost:11434/v1"   # openai backend only
+# api_key_env = "OPENAI_API_KEY"           # openai backend only
 ```
 
 ## Keys
@@ -116,7 +119,7 @@ globs. Set to `false` to scan gitignored files too.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `nli` | bool | `false` | Enable the local NLI cross-encoder lane (needs `detangle[nli]`) |
-| `jury` | bool | `false` | Enable the LLM jury lane (needs `detangle[jury]` + `ANTHROPIC_API_KEY`) |
+| `jury` | bool | `false` | Enable the LLM jury lane (needs any backend: the `claude` CLI, `ANTHROPIC_API_KEY`, or an OpenAI-compatible `base_url` — see [lanes.md](lanes.md)) |
 
 See [lanes.md](lanes.md). The `--nli` / `--jury` flags turn a lane **on** for one run; they
 cannot turn off a lane enabled in the file. Must be a table, else a config error.
@@ -143,8 +146,12 @@ routed through this filter.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `model` | string | `"claude-haiku-4-5-20251001"` | Anthropic model ID the jury uses (pin a snapshot, not an alias) |
+| `model` | string | `"claude-haiku-4-5-20251001"` | Juror model, backend-shaped: an Anthropic snapshot ID (anthropic), a CLI alias like `haiku`/`sonnet` (claude-cli), or the endpoint's model name (openai). Left at default, each backend picks its own sensible model. |
 | `max_pairs` | int | `200` | Cap on pairs adjudicated per run (2 API calls each) |
+| `backend` | string | `"auto"` | `auto` / `claude-cli` / `anthropic` / `openai`. `auto` picks the first available (key → anthropic, `claude` CLI → claude-cli, `base_url` → openai). |
+| `base_url` | string | `""` | OpenAI-compatible endpoint root for the `openai` backend (e.g. `http://localhost:11434/v1` for Ollama). |
+| `api_key_env` | string | `"OPENAI_API_KEY"` | Name of the env var holding the key for the `openai` backend; unset env sends no auth header (local servers). |
+
 
 ### `[detangle.nli]` — table
 
@@ -261,6 +268,6 @@ Lists every rule code with its name, default severity, and one-line summary.
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | jury lane only | API key for the Anthropic SDK. If missing while `--jury` is requested, the lane is skipped with a warning; the scan still completes. |
+| `ANTHROPIC_API_KEY` | jury `anthropic` backend | API key for the Anthropic SDK. With the `claude-cli` backend no key is needed (the CLI carries its own auth); with the `openai` backend the key env var is named by `api_key_env`. If no backend is available while `--jury` is requested, the lane is skipped with a warning; the scan still completes. |
 
 The deterministic core reads no environment variables and makes no network calls.
