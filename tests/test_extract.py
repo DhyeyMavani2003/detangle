@@ -70,15 +70,23 @@ class TestDetectModality:
         assert (hit.modality, hit.strength) == (Modality.FORBID, Strength.HARD)
         assert hit.pos == 0
 
-    def test_earliest_match_wins_oblige_before_forbid(self):
-        # 'should' at 4 beats 'never' at 11
+    def test_compound_should_never_is_forbid(self):
+        # polarity is sacred: 'should never' is a prohibition, not an
+        # obligation ('should'@4 must not beat 'never'@11)
         hit = detect_modality("You should never force-push.")
-        assert (hit.modality, hit.strength) == (Modality.OBLIGE, Strength.SOFT)
-        assert hit.pos == 4
+        assert (hit.modality, hit.strength) == (Modality.FORBID, Strength.SOFT)
 
-    def test_earliest_match_wins_always_before_avoid(self):
+    def test_compound_always_avoid_is_forbid(self):
         hit = detect_modality("Always avoid the temptation.")
-        assert (hit.modality, hit.strength) == (Modality.OBLIGE, Strength.HARD)
+        assert (hit.modality, hit.strength) == (Modality.FORBID, Strength.HARD)
+
+    def test_compound_can_never_is_forbid(self):
+        hit = detect_modality("You can never delete production data.")
+        assert (hit.modality, hit.strength) == (Modality.FORBID, Strength.HARD)
+
+    def test_emphasis_prefix_is_not_modality(self):
+        hit = detect_modality("IMPORTANT: never delete user data.")
+        assert (hit.modality, hit.strength) == (Modality.FORBID, Strength.HARD)
 
     def test_earliest_match_wins_avoid_before_always(self):
         hit = detect_modality("Avoid always doing that.")

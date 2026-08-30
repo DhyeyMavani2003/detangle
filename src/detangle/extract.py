@@ -25,15 +25,18 @@ from .ir import (
 from .lexicons import (
     COMPARATOR_PHRASES,
     CONDITION_LEADERS,
+    EMPHASIS_PREFIX_RE,
     ESCAPE_CLAUSE_RE,
     EXCEPTION_MARKERS_RE,
     FORBID_HARD,
+    FORBID_HARD_COMPOUNDS,
     FORBID_SOFT,
     IMPERATIVE_VERBS,
     NON_IMPERATIVE_STARTERS,
     OBLIGE_HARD,
     OBLIGE_SOFT,
     PERMIT,
+    POSTFIX_COMPARATOR_RE,
     PREFER,
     STOPWORDS,
     UNIT_ALIASES,
@@ -56,7 +59,7 @@ def _compile(pats: tuple[str, ...]) -> list[re.Pattern[str]]:
 
 
 _MODALITY_TABLE: list[tuple[list[re.Pattern[str]], Modality, Strength]] = [
-    (_compile(FORBID_HARD), Modality.FORBID, Strength.HARD),
+    (_compile(FORBID_HARD + FORBID_HARD_COMPOUNDS), Modality.FORBID, Strength.HARD),
     (_compile(FORBID_SOFT), Modality.FORBID, Strength.SOFT),
     (_compile(OBLIGE_HARD), Modality.OBLIGE, Strength.HARD),
     (_compile(OBLIGE_SOFT), Modality.OBLIGE, Strength.SOFT),
@@ -66,7 +69,14 @@ _MODALITY_TABLE: list[tuple[list[re.Pattern[str]], Modality, Strength]] = [
 
 
 def detect_modality(text: str) -> _ModalityHit | None:
-    """Earliest-match wins across all tables; ties broken by table order."""
+    """Earliest-match wins across all tables; ties broken by table order.
+
+    FORBID tables come first, so compound modal+negation forms that start at
+    the same offset as the bare modal ('should never' vs 'should') resolve
+    to the prohibition — polarity is sacred. Emphasis labels ('IMPORTANT:')
+    are stripped first: they are attention markers, not modality.
+    """
+    text = EMPHASIS_PREFIX_RE.sub("", text)
     best: _ModalityHit | None = None
     for patterns, modality, strength in _MODALITY_TABLE:
         for pat in patterns:
@@ -105,7 +115,7 @@ def split_condition(text: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 _NUM_RE = (
-    r"(?P<num>(?<![\w.])\d+(?:[.,]\d+)?|\b(?:"
+    r"(?P<num>(?<![\w.,-])\d{1,3}(?:,\d{3})+(?:\.\d+)?|(?<![\w.,-])\d+(?:\.\d+)?|\b(?:"
     + "|".join(re.escape(w) for w in WORD_NUMBERS)
     + r")\b)"
 )
@@ -163,6 +173,12 @@ def extract_quantities(text: str) -> list[Quantity]:
         nxt = text[m.end() : m.end() + 1]
         if not unit and (nxt.isalnum() or nxt in {"_", "-", "."}):
             continue
+        # ranges ("3-5 times") and negative sentinels ("set to -1") are not
+        # single constraints — skip (precision-first)
+        if re.search(r"[-–]\s*$", text[: m.start()]) or re.match(
+            r"\s*[-–]\s*\d", text[m.end() :]
+        ):
+            continue
         subject = unit
         if not subject:
             # look ahead a couple of words for the subject noun
@@ -197,6 +213,11 @@ def extract_quantities(text: str) -> list[Quantity]:
         ):
             continue
         cmp_ = _normalize_cmp(m.group("cmp"))
+        # postfix comparators: "400 words or more" / "3 retries or fewer"
+        pm = POSTFIX_COMPARATOR_RE.match(text[m.end() :])
+        if pm and cmp_ == "==":
+            direction = pm.group("dir").lower()
+            cmp_ = ">=" if direction in {"more", "higher", "greater"} else "<="
         out.append(
             Quantity(
                 value=num,
@@ -267,6 +288,7 @@ def extract_frame(body: str, hit: _ModalityHit | None) -> Frame:
         frame.modality = hit.modality
         frame.strength = hit.strength
         frame.negated = hit.modality == Modality.FORBID
+    body = EMPHASIS_PREFIX_RE.sub("", body.strip())
     stripped = _MODAL_STRIP_RE.sub("", body.strip(), count=1).strip()
     # "no <gerund>" pattern
     m = re.match(r"^no\s+(\w+ing)\b\s*(.*)$", stripped, re.IGNORECASE)
@@ -373,6 +395,7 @@ def normalize_declarative(text: str, frame: Frame) -> str:
     Used for NLI inputs and for content-hash identity.
     """
     t = " ".join(text.split()).rstrip(".!").strip()
+    t = EMPHASIS_PREFIX_RE.sub("", t)
     if not t:
         return t
     lower = t.lower()

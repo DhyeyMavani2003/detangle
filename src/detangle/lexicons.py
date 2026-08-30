@@ -38,14 +38,26 @@ FORBID_SOFT = (
     r"(?<!to\s)\bavoid\b",  # "to avoid X" is a purpose clause, not a prohibition
     r"\brefrain\s+from\b",
     r"\bshould\s+not\b",
+    r"\bshould\s+never\b",  # compound: ties with OBLIGE 'should' resolve here (polarity!)
     r"\bshouldn['’]t\b",
     r"\btry\s+not\s+to\b",
     r"\bsteer\s+clear\b",
     r"\bdiscouraged\b",
 )
 
+# compound modal+negation forms that would otherwise tie with the weaker
+# modal at the same offset and invert polarity — FORBID tables are checked
+# first, so listing them here makes the negation win the tie
+FORBID_HARD_COMPOUNDS = (
+    r"\bcan\s+never\b",
+    r"\bcannot\b",
+    r"\bcan['’]t\b",
+    r"\bmust\s+always\s+avoid\b",
+    r"\balways\s+avoid\b",
+)
+
 OBLIGE_HARD = (
-    r"\balways\b",
+    r"\balways\b(?!\s+avoid\b)",
     r"\bmust\b",
     r"\bshall\b",
     r"\bensure\b",
@@ -57,7 +69,13 @@ OBLIGE_HARD = (
     r"\bhave\s+to\b",
     r"\bneeds?\s+to\b",
     r"\bit\s+is\s+critical\b",
-    r"\bimportant:\s",
+)
+
+# emphasis labels are not modality: "IMPORTANT: never delete user data" is a
+# prohibition, not an obligation — strip these before modality detection
+EMPHASIS_PREFIX_RE = re.compile(
+    r"^(?:important|note|critical|warning|caution|remember|nb)\s*[:!—-]+\s*",
+    re.IGNORECASE,
 )
 
 OBLIGE_SOFT = (
@@ -411,10 +429,15 @@ WORD_NUMBERS: dict[str, float] = {
     "twice": 2,
 }
 
-# comparator phrase -> normalized comparator
+# comparator phrase -> normalized comparator (negated forms BEFORE their
+# positive counterparts — "no shorter than" must not parse as "shorter than")
 COMPARATOR_PHRASES: tuple[tuple[str, str], ...] = (
     (r"(?:must|should|shall|may|can)?\s*(?:not|never)\s+exceed", "<="),
     (r"exceeds?|exceeding", ">"),
+    (r"no[t]?\s+shorter\s+than", ">="),
+    (r"no[t]?\s+longer\s+than", "<="),
+    (r"no[t]?\s+(?:higher|greater|larger|bigger)\s+than", "<="),
+    (r"no[t]?\s+(?:lower|smaller)\s+than", ">="),
     (r"at\s+most", "<="),
     (r"no\s+more\s+than", "<="),
     (r"not\s+more\s+than", "<="),
@@ -433,9 +456,18 @@ COMPARATOR_PHRASES: tuple[tuple[str, str], ...] = (
     (r"more\s+than", ">"),
     (r"over", ">"),
     (r"longer\s+than", ">"),
+    (r"(?:greater|higher|larger|bigger)\s+than", ">"),
+    (r"above", ">"),
+    (r"(?:lower|smaller)\s+than", "<"),
     (r"exceeding", ">"),
     (r"exactly", "=="),
     (r"precisely", "=="),
+)
+
+# postfix comparators: "400 words or more" / "3 retries or fewer"
+POSTFIX_COMPARATOR_RE = re.compile(
+    r"^\s*(?:[a-z]+\s+)?or\s+(?P<dir>more|less|fewer|higher|lower|greater|smaller)\b",
+    re.IGNORECASE,
 )
 
 UNIT_ALIASES: dict[str, str] = {
@@ -877,4 +909,9 @@ STOPWORDS = frozenset(
 def content_tokens(text: str) -> list[str]:
     """Lowercased content-word tokens (stopwords and punctuation removed)."""
     toks = re.findall(r"[a-zA-Z_][\w./-]*|\d+", text.lower())
-    return [t for t in toks if t not in STOPWORDS and len(t) > 1]
+    out = []
+    for t in toks:
+        t = t.rstrip(".,;:!?")
+        if t and t not in STOPWORDS and len(t) > 1:
+            out.append(t)
+    return out
