@@ -1,0 +1,34 @@
+name: "detangle"
+description: >-
+  Lint your AI agent configuration (CLAUDE.md, AGENTS.md, .cursor/rules, Copilot
+  instructions) for conflicting, contradictory, redundant, shadowed, and
+  precedence-ambiguous instructions.
+author: "Dhyey Mavani"
+branding:
+  icon: "git-merge"
+  color: "purple"
+
+inputs:
+  args:
+    description: >-
+      Arguments passed to the detangle CLI (default: scan the workspace and fail
+      the job on error-severity findings).
+    required: false
+    default: "scan ."
+  python-version:
+    description: "Python version to run detangle with."
+    required: false
+    default: "3.12"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install detangle
+      shell: bash
+      run: pip install --quiet "${{ github.action_path }}"
+    - name: Run detangle
+      shell: bash
+      run: detangle ${{ inputs.args }}

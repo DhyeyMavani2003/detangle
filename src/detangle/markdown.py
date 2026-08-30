@@ -203,10 +203,17 @@ def iter_sentences(blocks: list[Block]) -> list[Sentence]:
         if b.kind in {"code", "table", "heading", "comment"}:
             continue
         prose = _COMMENT_RE.sub(" ", b.text)
-        prose = re.sub(r"`[^`]*`", lambda m: m.group(0).replace(". ", "․ "), prose)
+        # strip markdown emphasis so ** and * never enter frames as tokens
+        prose = re.sub(r"\*\*([^*]+)\*\*", r"\1", prose)
+        prose = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"\1", prose)
+        prose = re.sub(r"__([^_]+)__", r"\1", prose)
+        # keep inline-code content, drop the backticks; protect dots inside
+        prose = re.sub(
+            r"`([^`]*)`", lambda m: m.group(1).replace(". ", "․ ").replace(" ", "␣"), prose
+        )
         sentences = split_sentences(prose)
         for s in sentences:
-            s = s.replace("․ ", ". ")
+            s = s.replace("․ ", ". ").replace("␣", " ")
             if len(s) < 3:
                 continue
             out.append(Sentence(s, b.start_line, b.end_line, b.heading_path, b.kind == "bullet"))

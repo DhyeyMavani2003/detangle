@@ -35,7 +35,7 @@ FORBID_HARD = (
 )
 
 FORBID_SOFT = (
-    r"\bavoid\b",
+    r"(?<!to\s)\bavoid\b",  # "to avoid X" is a purpose clause, not a prohibition
     r"\brefrain\s+from\b",
     r"\bshould\s+not\b",
     r"\bshouldn['’]t\b",
@@ -413,6 +413,8 @@ WORD_NUMBERS: dict[str, float] = {
 
 # comparator phrase -> normalized comparator
 COMPARATOR_PHRASES: tuple[tuple[str, str], ...] = (
+    (r"(?:must|should|shall|may|can)?\s*(?:not|never)\s+exceed", "<="),
+    (r"exceeds?|exceeding", ">"),
     (r"at\s+most", "<="),
     (r"no\s+more\s+than", "<="),
     (r"not\s+more\s+than", "<="),

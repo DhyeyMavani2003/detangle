@@ -1,0 +1,4 @@
+# detangle's own configuration (dogfood: detangle scans this repo in CI)
+[detangle]
+ecosystems = ["claude-code", "agents-md", "cursor", "copilot"]
+fail_on = "error"

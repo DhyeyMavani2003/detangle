@@ -176,8 +176,44 @@ class StaleReferenceDetector(Detector):
         for u in ctx.units:
             text = u.text
             for m in _PATH_RE.finditer(text):
-                ref = m.group(1).strip("./")
+                ref = m.group(1)
+                while ref.startswith("./"):
+                    ref = ref[2:]
+                ref = ref.rstrip("./")
                 if "*" in ref or "{" in ref:
+                    continue
+                # URL fragments are not repo paths: part of a scheme'd URL, or
+                # hostname-shaped (dot inside the first path segment)
+                prefix = text[max(0, m.start() - 40) : m.start()]
+                if re.search(r"https?://\S*$|www\.\S*$", prefix):
+                    continue
+                first_seg = ref.split("/", 1)[0]
+                if "." in first_seg.lstrip("."):
+                    continue
+                # runtime/derived dirs legitimately absent from the repo
+                if first_seg.lstrip(".") in {
+                    "node_modules",
+                    "build",
+                    "dist",
+                    "out",
+                    "target",
+                    "venv",
+                    "coverage",
+                    "tmp",
+                    "temp",
+                    "__pycache__",
+                    "next",
+                    "cache",
+                }:
+                    continue
+                # a file extension in a NON-final segment means the "path" is
+                # really prose ("main.mjs/package.json")
+                segs = ref.split("/")
+                if any(re.search(r"\.[A-Za-z]{1,8}$", s) for s in segs[:-1]):
+                    continue
+                # the final extension must contain a letter ("glm-5.2" is a
+                # model id, not a file)
+                if not re.search(r"\.[A-Za-z][A-Za-z0-9]{0,7}$", ref):
                     continue
                 if ref.lower() in _GENERIC_FILENAMES or "/" not in ref:
                     continue  # bare filenames are too often examples
@@ -340,6 +376,22 @@ _LEAKAGE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# "run ruff", "lint with ruff check" instruct to RUN the enforcer — that is
+# policy delegation, not restated policy; never flag those (dogfood-found FP)
+_RUN_TOOL_RE = re.compile(
+    r"\b(?:run|running|execute|invoke|use|using|via|with)\s+`?"
+    r"(?:prettier|eslint|black|ruff|gofmt|rustfmt)\b",
+    re.IGNORECASE,
+)
+
+# a restatement names a concrete style property the tool config already fixes
+_STYLE_PROPERTY_RE = re.compile(
+    r"\b(indent(?:ation)?|tabs?|spaces|semicolons?|quotes?|line\s+length|line\s+width|"
+    r"trailing\s+comma|import\s+order|sorted\s+imports|single[\s-]quote|double[\s-]quote|"
+    r"\d+\s+characters?|\d+\s+columns?)\b",
+    re.IGNORECASE,
+)
+
 
 class LintLeakageDetector(Detector):
     codes = ("DTR04",)
@@ -372,6 +424,8 @@ class LintLeakageDetector(Detector):
             tool = (m.group(1) or m.group(2) or "").lower()
             if not tool or not enforcer_configured(tool):
                 continue
+            if _RUN_TOOL_RE.search(u.text) and not _STYLE_PROPERTY_RE.search(u.text):
+                continue  # "run the linter" is delegation, not leakage
             out.append(
                 Finding(
                     code="DTR04",

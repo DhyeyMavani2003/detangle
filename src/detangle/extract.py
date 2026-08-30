@@ -104,11 +104,20 @@ def split_condition(text: str) -> tuple[str, str]:
 # Quantities
 # ---------------------------------------------------------------------------
 
-_NUM_RE = r"(?P<num>\d+(?:[.,]\d+)?|" + "|".join(re.escape(w) for w in WORD_NUMBERS) + r")"
-_UNIT_RE = r"(?P<unit>[a-zA-Z%]+)?"
+_NUM_RE = (
+    r"(?P<num>(?<![\w.])\d+(?:[.,]\d+)?|\b(?:"
+    + "|".join(re.escape(w) for w in WORD_NUMBERS)
+    + r")\b)"
+)
+# only KNOWN units are captured as units — capturing arbitrary following words
+# produced garbage comparisons on real repos
+_UNIT_ALT = "|".join(
+    sorted((re.escape(u) for u in UNIT_ALIASES if u not in {"%"}), key=len, reverse=True)
+)
+_UNIT_RE = r"(?:\s*(?P<unit>(?:" + _UNIT_ALT + r"))\b|\s*(?P<pct>%))?"
 _CMP_ALTS = "|".join(p for p, _ in COMPARATOR_PHRASES)
 _QTY_RE = re.compile(
-    r"(?:(?P<cmp>" + _CMP_ALTS + r"|<=|>=|<|>|==?)\s*)?" + _NUM_RE + r"\s*" + _UNIT_RE,
+    r"(?:(?P<cmp>" + _CMP_ALTS + r"|<=|>=|<|>|==?)\s*)?" + _NUM_RE + _UNIT_RE,
     re.IGNORECASE,
 )
 _CMP_LOOKUP = [(re.compile("^(?:" + p + ")$", re.IGNORECASE), c) for p, c in COMPARATOR_PHRASES]
@@ -149,7 +158,11 @@ def extract_quantities(text: str) -> list[Quantity]:
         if num is None:
             continue
         raw_unit = (m.group("unit") or "").lower().strip(".,;:")
-        unit = UNIT_ALIASES.get(raw_unit, "")
+        unit = "percent" if m.group("pct") else UNIT_ALIASES.get(raw_unit, "")
+        # a bare number glued to an identifier ("2e8", "v2ray", "utf8x") is code
+        nxt = text[m.end() : m.end() + 1]
+        if not unit and (nxt.isalnum() or nxt in {"_", "-", "."}):
+            continue
         subject = unit
         if not subject:
             # look ahead a couple of words for the subject noun
@@ -159,8 +172,24 @@ def extract_quantities(text: str) -> list[Quantity]:
                 lw = w.lower()
                 if lw in _QTY_SUBJECT_BLACKLIST or lw in STOPWORDS:
                     continue
+                if len(lw) < 3:
+                    break
                 subject = UNIT_ALIASES.get(lw, lw)
                 break
+        # word-numbers without an explicit comparator are almost never
+        # constraints ("one of the ways", "stays on one line")
+        is_word_number = not m.group("num")[0].isdigit()
+        if is_word_number and not m.group("cmp"):
+            continue
+        # descriptive quantities state facts, not prescriptions:
+        # "(default 20 min)", "currently 15s", "typically ~90s"
+        lead = text[max(0, m.start() - 24) : m.start()].lower()
+        if re.search(
+            r"(?:default(?:s?\s+to)?|currently|typically|usually|approx(?:\.|imately)?|"
+            r"about|around|roughly|e\.g\.|now|today|~)\s*[:(]?\s*$",
+            lead,
+        ):
+            continue
         # version-like or date-like numbers are not constraints
         ctx = text[max(0, m.start() - 12) : m.end() + 4].lower()
         if re.search(r"\bv(?:ersion)?\s*$", text[: m.start()].lower()[-9:]) or re.search(
@@ -245,7 +274,7 @@ def extract_frame(body: str, hit: _ModalityHit | None) -> Frame:
         frame.modality = Modality.FORBID
         frame.negated = True
         stripped = m.group(1) + " " + m.group(2)
-    words = re.findall(r"[a-zA-Z_'’./-]+|\S", stripped)
+    words = re.findall(r"[a-zA-Z0-9_'’./-]*[a-zA-Z][a-zA-Z0-9_'’./-]*|\S", stripped)
     if not words:
         return frame
     verb = words[0].lower().strip(".,;:")
@@ -312,6 +341,13 @@ def looks_like_instruction(text: str, from_bullet: bool) -> bool:
     """Is this sentence prescriptive (vs descriptive/contextual)?"""
     t = text.strip()
     if len(t) < 4:
+        return False
+    # template placeholders ("<commit-hash>: <description>") are not instructions
+    if t.startswith("<") or len(re.findall(r"<[^<>]{1,40}>", t)) >= 2:
+        return False
+    # short colon-terminated lead-ins introduce a block; the block carries
+    # the instruction, not the lead-in
+    if t.endswith(":") and len(t.split()) < 6:
         return False
     words = re.findall(r"[a-zA-Z'’]+", t)
     if not words:

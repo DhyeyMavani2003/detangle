@@ -65,6 +65,14 @@ class DuplicateDetector(Detector):
             # sentences that merely share a topic.
             if a.frame.action and a.frame.action == b.frame.action and _material_word_diff(a, b):
                 ctx.claim(pair)
+                # shared boilerplate across different model-triggered bodies
+                # (skill/subagent templates) is common and rarely drift — keep
+                # it visible but advisory
+                both_model_bodies = (
+                    a.file.mechanism in {"skill", "subagent", "command"}
+                    and b.file.mechanism in {"skill", "subagent", "command"}
+                    and a.file.path != b.file.path
+                )
                 out.append(
                     Finding(
                         code="DTR02",
@@ -73,7 +81,7 @@ class DuplicateDetector(Detector):
                             "same instruction that have started to diverge — a merge "
                             "conflict in slow motion."
                         ),
-                        severity=Severity.WARNING,
+                        severity=Severity.ADVISORY if both_model_bodies else Severity.WARNING,
                         evidence=pair_evidence(pair),
                         units=[a, b],
                         co_activation=pair.co_activation_account,

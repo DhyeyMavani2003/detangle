@@ -17,7 +17,46 @@ import math
 from dataclasses import dataclass
 
 from ..ir import InstructionUnit, Modality, Quantity, Strength
-from ..lexicons import UNIT_DIMENSION, are_antonyms
+from ..lexicons import IMPERATIVE_VERBS, UNIT_DIMENSION, are_antonyms
+
+# supplementary verbs seen in real configs whose frames should still qualify
+_EXTRA_VERBS = frozenset(
+    [
+        "change",
+        "browse",
+        "share",
+        "obey",
+        "access",
+        "modify",
+        "touch",
+        "alter",
+        "force",
+        "hardcode",
+        "expose",
+        "leak",
+        "echo",
+        "say",
+        "mention",
+        "reveal",
+        "disclose",
+        "overwrite",
+        "bypass",
+        "suppress",
+        "silence",
+        "fabricate",
+        "invent",
+        "guess",
+        "hallucinate",
+        "assume",
+        "commit",
+        "push",
+    ]
+)
+_KNOWN_VERBS = IMPERATIVE_VERBS | _EXTRA_VERBS
+
+
+def _plausible_verb(action: str) -> bool:
+    return action in _KNOWN_VERBS
 
 
 @dataclass
@@ -49,14 +88,21 @@ def _obj_head(obj: str) -> str:
 def _objects_match(a: InstructionUnit, b: InstructionUnit) -> bool:
     oa, ob = a.frame.obj, b.frame.obj
     if not oa or not ob:
-        return oa == ob  # both empty counts as matching (intransitive verbs)
+        # empty objects never match: on real repos the pairs whose object
+        # extraction failed on both sides were overwhelmingly unrelated
+        return False
     if oa == ob:
         return True
     ha, hb = _obj_head(oa), _obj_head(ob)
     if ha == hb:
         return True
-    # one object phrase containing the other's head ("the tests" vs "tests first")
-    return bool(ha and hb and (ha in ob.split() or hb in oa.split()))
+    # whole-phrase containment only ("main" ⊂ "main hotfixes"); a merely
+    # shared head word ("cargo test" vs "test the project") matched
+    # refinements like "don't run X directly / run Y instead" on real repos
+    wa, wb = oa.split(), ob.split()
+    return bool(
+        (len(wa) <= len(wb) and wa == wb[: len(wa)]) or (len(wb) <= len(wa) and wb == wa[: len(wb)])
+    )
 
 
 def _objects_antonymous(a: InstructionUnit, b: InstructionUnit) -> bool:
@@ -72,7 +118,9 @@ def _objects_antonymous(a: InstructionUnit, b: InstructionUnit) -> bool:
 
 
 def _actions_match(a: InstructionUnit, b: InstructionUnit) -> bool:
-    return bool(a.frame.action and a.frame.action == b.frame.action)
+    return bool(
+        a.frame.action and a.frame.action == b.frame.action and _plausible_verb(a.frame.action)
+    )
 
 
 def _actions_antonymous(a: InstructionUnit, b: InstructionUnit) -> bool:
@@ -172,23 +220,68 @@ def _dimension(q: Quantity) -> tuple[str, float]:
     return (q.unit or q.subject or "", 1.0)
 
 
-def _subjects_comparable(qa: Quantity, qb: Quantity) -> bool:
+_ANCHOR_RE = None
+
+
+def _anchors(text: str) -> frozenset[str]:
+    """Nouns that identify WHICH quantity a sentence constrains."""
+    global _ANCHOR_RE
+    if _ANCHOR_RE is None:
+        import re
+
+        _ANCHOR_RE = re.compile(
+            r"\b(timeouts?|intervals?|delays?|retries|retry|attempts?|limits?|budgets?|"
+            r"sizes?|lengths?|durations?|waits?|depths?|widths?|caps?|quotas?|"
+            r"iterations?|deadlines?)\b",
+            re.IGNORECASE,
+        )
+    return frozenset(m.lower().rstrip("s") for m in _ANCHOR_RE.findall(text))
+
+
+def _subjects_comparable(qa: Quantity, qb: Quantity, text_a: str = "", text_b: str = "") -> bool:
     if qa.subject and qa.subject == qb.subject:
+        # same-dimension units used as bare subjects still need a shared
+        # anchor noun: "global timeout 20 min" vs "refetch interval 3s" are
+        # different knobs even though both are seconds
+        if qa.subject == qa.unit and _dimension(qa)[0] == "time":
+            aa, ab = _anchors(text_a), _anchors(text_b)
+            return not aa or not ab or bool(aa & ab)
         return True
     da, db = _dimension(qa), _dimension(qb)
-    if da[0] and da[0] == db[0]:
-        # same measured dimension AND compatible subject words
-        sa, sb = qa.subject or qa.unit, qb.subject or qb.unit
-        return bool(sa and sb and (sa == sb or da[0] not in ("", "text")))
+    if da[0] and da[0] == db[0] and da[0] != "text":
+        # cross-unit comparison ("30 seconds" vs "2 minutes") requires the
+        # two sentences to constrain the same named thing
+        aa, ab = _anchors(text_a), _anchors(text_b)
+        return bool(aa & ab)
     return False
 
 
 def quantities_conflict(a: InstructionUnit, b: InstructionUnit) -> Disagreement | None:
-    """Empty intersection of numeric ranges about the same subject."""
+    """Empty intersection of numeric ranges about the same subject.
+
+    Precision gates (added after real-repo dogfooding):
+    - a quantity inside a unit's *condition* clause is a trigger threshold,
+      not a prescription ("split anything over 800 lines" vs "keep files
+      under 500 lines" is a band, not a conflict) — skipped;
+    - unless the two units share the same action verb, at least one
+      comparator must be '==' (opposite-direction bounds in sentences that
+      merely share a subject are usually target-vs-trigger bands);
+    - bare 'percent' quantities are only comparable when actions match.
+    """
+    actions_same = _actions_match(a, b)
     for qa in a.quantities:
         for qb in b.quantities:
-            if not _subjects_comparable(qa, qb):
+            if not _subjects_comparable(qa, qb, a.text, b.text):
                 continue
+            if qa.raw and qa.raw in a.frame.condition:
+                continue
+            if qb.raw and qb.raw in b.frame.condition:
+                continue
+            if not actions_same:
+                if "==" not in (qa.comparator, qb.comparator):
+                    continue
+                if qa.subject == "percent" and qa.unit == "percent":
+                    continue
             da, db = _dimension(qa), _dimension(qb)
             lo_a, hi_a = _interval(qa)
             lo_b, hi_b = _interval(qb)
