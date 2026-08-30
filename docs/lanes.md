@@ -56,15 +56,26 @@ accuracy (~90%) does not transfer to instruction pairs, which are out-of-domain;
 (55–70%) is the realistic ceiling. **That is why this lane is a filter.** detangle never ships
 raw NLI verdicts as errors:
 
-- **Standalone (`--nli` without `--jury`):**
-  - Pairs scoring at or above the strict auto-flag threshold that the deterministic lane
-    *already* flagged get `"nli"` added to their `lanes` — two independent lanes agreeing.
-  - Pairs above the threshold that the deterministic lane could *not* confirm are surfaced as
-    DTC01 findings at `warning` severity, worded explicitly as *"a lead, not a verdict"*,
-    with reduced confidence.
-- **With the jury (`--nli --jury`):** the NLI scores become a banding function
-  (Fellegi–Sunter style): the auto-flag band and the gray zone are handed to the jury for
-  adjudication instead of being reported directly.
+**Measured on this codebase (2026-08-30):** we ran the shipped model over declarativized
+instruction pairs and A/B-tested three normalization templates, per the research's advice.
+The result is stark: true contradictions score ~1.00 — but so do pairs of merely *different*
+prescriptions ("must run tests" vs "must write documentation" scores 0.99 contradiction under
+every template). This is the single-event NLI artifact: the model reads two different
+obligations about one subject as incompatible. Paraphrases and benign specializations,
+by contrast, reliably score ~0.00. So for this model class only one band exists:
+
+- **Auto-clear** (symmetrized contradiction < `TAU_CLEAR = 0.25`): the pair is definitively
+  compatible.
+- Everything else is merely *not cleared* — a high score cannot distinguish "conflicting"
+  from "different".
+
+detangle's lane semantics follow the measurement:
+
+- **Standalone (`--nli` without `--jury`):** the lane reports how many pairs it auto-cleared
+  (a scan note) and **never emits a finding from an NLI score alone**.
+- **With the jury (`--nli --jury`):** auto-cleared pairs are never sent to the jury (a
+  cost saver — compatible pairs skip adjudication entirely); the not-cleared band is handed
+  to the jury ranked by score.
 
 **Model.** Configurable via `[detangle.nli] model = "..."` in `.detangle.toml`.
 Default: `cross-encoder/nli-deberta-v3-small` (0.1B — the cheap pre-filter tier;
@@ -83,11 +94,10 @@ Avoid `facebook/bart-large-mnli` (outdated HF zero-shot default) and the
 `[detangle.nli] model = "..."` in `.detangle.toml`
 (see [docs/configuration.md](configuration.md)).
 
-**Banding thresholds.** Symmetrized contradiction probability is banded at `TAU_LOW = 0.25`
-(gray-zone floor) and `TAU_HIGH = 0.88` (auto-flag). These were calibrated on the seeded
-benchmark in `benchmarks/`, consistent with the research warning that raw NLI softmax is
-miscalibrated out-of-domain and must be treated as a ranking, calibrated on labeled pairs,
-before any absolute threshold is trusted.
+**Banding threshold.** `TAU_CLEAR = 0.25` on the symmetrized contradiction probability.
+The measured bands are far apart (compatible pairs ~0.00, everything else ~0.99), so the
+exact value is uncritical; it errs toward sending pairs to the jury. Raw NLI softmax remains
+miscalibrated out-of-domain — treat scores as a ranking, never as probabilities.
 
 **Guards baked in:**
 
@@ -176,7 +186,7 @@ sole source of an `error`.
 
 ### Candidate selection
 
-- If the NLI lane ran: the auto-flag band plus the gray zone, in that order.
+- If the NLI lane ran: the not-cleared band, best-scored first (auto-cleared pairs are never adjudicated).
 - Otherwise: unclaimed pairs ranked by lexical similarity, highest first.
 - Hard cap: `jury_max_pairs` (default **200** pairs) — the budget valve.
 

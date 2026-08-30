@@ -215,10 +215,9 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
     # candidates: NLI bands if the NLI lane ran, else similarity-ranked
     # unclaimed pairs (highest lexical similarity first)
     banded: list[UnitPair] = []
-    nli_flag = getattr(ctx, "nli_flag", None)
-    nli_gray = getattr(ctx, "nli_gray", None)
-    if nli_flag is not None or nli_gray is not None:
-        banded = [p for p, _ in (nli_flag or [])] + [p for p, _ in (nli_gray or [])]
+    nli_not_cleared = getattr(ctx, "nli_not_cleared", None)
+    if nli_not_cleared is not None:
+        banded = [p for p, _ in nli_not_cleared]
     else:
         banded = sorted(
             (p for p in ctx.pairs if not ctx.is_claimed(p)),
