@@ -47,9 +47,7 @@ class _ScriptedJurorHandler(BaseHTTPRequestHandler):
             "resolution_hint": "pick one",
             "confidence": 0.91,
         }
-        payload = json.dumps(
-            {"choices": [{"message": {"content": json.dumps(verdict)}}]}
-        ).encode()
+        payload = json.dumps({"choices": [{"message": {"content": json.dumps(verdict)}}]}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -107,9 +105,7 @@ def test_jury_pipeline_end_to_end_over_http(tmp_path: Path):
         before = len(_ScriptedJurorHandler.calls)
         result2 = scan(cfg)
         assert len(_ScriptedJurorHandler.calls) == before
-        assert [f.fingerprint for f in result2.findings] == [
-            f.fingerprint for f in result.findings
-        ]
+        assert [f.fingerprint for f in result2.findings] == [f.fingerprint for f in result.findings]
     finally:
         server.shutdown()
         server.server_close()
