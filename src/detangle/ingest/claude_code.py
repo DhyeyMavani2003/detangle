@@ -41,7 +41,9 @@ MAX_IMPORT_DEPTH = 4
 SKILL_LISTING_CAP = 1536  # chars: description + when_to_use in the skill listing
 CLAUDE_MD_LINE_GUIDANCE = 200
 
-_IMPORT_RE = re.compile(r"(?<![\w`@])@([\w~][\w./~-]*[\w])")
+_IMPORT_RE = re.compile(r"(?<![\w`@])@((?:/|\.\.?/(?:\.\.?/)*)?[\w~][\w./~-]*[\w])")
+_INLINE_CODE_RE = re.compile(r"``+[^`]*``+|`[^`]*`")
+_FENCE_OPEN_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 
 
 def _find_imports(
@@ -56,20 +58,30 @@ def _find_imports(
         notes.append(f"{rel(root, path)}: @import depth limit ({MAX_IMPORT_DEPTH} hops) reached")
         return []
     found: list[tuple[Path, str]] = []
-    in_code = False
+    fence_close: re.Pattern[str] | None = None  # set while inside a fence
     for line in text.split("\n"):
-        if re.match(r"^\s*(```|~~~)", line):
-            in_code = not in_code
+        if fence_close is not None:
+            if fence_close.match(line):
+                fence_close = None
             continue
-        if in_code:
+        fm = _FENCE_OPEN_RE.match(line)
+        if fm:
+            marker = fm.group(1)
+            # a closing fence is the marker alone, with a same-or-longer run
+            fence_close = re.compile(rf"^\s*{re.escape(marker[0])}{{{len(marker)},}}\s*$")
             continue
-        for m in _IMPORT_RE.finditer(line):
+        # inline code spans are not imports (`cat @file.md` is an example)
+        scannable = _INLINE_CODE_RE.sub(" ", line)
+        for m in _IMPORT_RE.finditer(scannable):
             target = m.group(1)
             if target.startswith("~"):
                 notes.append(f"{rel(root, path)}: @import outside repo not followed: @{target}")
                 continue
             if "." not in target.rsplit("/", 1)[-1]:
                 continue  # bare @word is probably a mention, not an import
+            if target.startswith("/"):
+                notes.append(f"{rel(root, path)}: absolute @import not followed: @{target}")
+                continue
             cand = (path.parent / target).resolve()
             try:
                 cand.relative_to(root.resolve())

@@ -54,14 +54,21 @@ class HiddenInstructionDetector(Detector):
         out: list[Finding] = []
         for cf in ctx.corpus.files:
             text = cf.text
+            # cf.text is the frontmatter-stripped body for rules/skills/cursor/
+            # copilot files: report file-absolute lines (as the DTR05 command
+            # branch does)
+            offset = max(int(cf.meta.get("body_start", 1)) - 1, 0)
+            body_lines = text.split("\n")
             # invisible / directional Unicode
             found: dict[str, list[int]] = {}
-            for i, line in enumerate(text.split("\n"), start=1):
+            for i, line in enumerate(body_lines, start=1):
                 for ch, name in _INVISIBLE_CHARS.items():
                     if ch in line:
-                        found.setdefault(name, []).append(i)
+                        found.setdefault(name, []).append(i + offset)
                 if _TAG_CHAR_RE.search(line):
-                    found.setdefault("Unicode TAG characters (invisible text)", []).append(i)
+                    found.setdefault("Unicode TAG characters (invisible text)", []).append(
+                        i + offset
+                    )
             for name, lines in sorted(found.items()):
                 first = lines[0]
                 out.append(
@@ -78,7 +85,7 @@ class HiddenInstructionDetector(Detector):
                         evidence=[
                             Evidence(
                                 SourceSpan(cf.path, first, first),
-                                text.split("\n")[first - 1][:120].strip() or "(invisible)",
+                                body_lines[first - offset - 1][:120].strip() or "(invisible)",
                                 name,
                             )
                         ],
@@ -103,7 +110,7 @@ class HiddenInstructionDetector(Detector):
                             severity=Severity.WARNING,
                             evidence=[
                                 Evidence(
-                                    SourceSpan(cf.path, start, end),
+                                    SourceSpan(cf.path, start + offset, end + offset),
                                     body[:160],
                                     "comment payload",
                                 )

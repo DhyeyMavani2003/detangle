@@ -169,15 +169,16 @@ def extract_quantities(text: str) -> list[Quantity]:
             continue
         raw_unit = (m.group("unit") or "").lower().strip(".,;:")
         unit = "percent" if m.group("pct") else UNIT_ALIASES.get(raw_unit, "")
-        # a bare number glued to an identifier ("2e8", "v2ray", "utf8x") is code
+        # a bare number glued to an identifier ("2e8", "v2ray", "utf8x") is
+        # code; a '.' only glues when it continues into an identifier or
+        # extension ("3.x") — a sentence-final period is punctuation
         nxt = text[m.end() : m.end() + 1]
-        if not unit and (nxt.isalnum() or nxt in {"_", "-", "."}):
+        nxt2 = text[m.end() + 1 : m.end() + 2]
+        if not unit and (nxt.isalnum() or nxt in {"_", "-"} or (nxt == "." and nxt2.isalnum())):
             continue
         # ranges ("3-5 times") and negative sentinels ("set to -1") are not
         # single constraints — skip (precision-first)
-        if re.search(r"[-–]\s*$", text[: m.start()]) or re.match(
-            r"\s*[-–]\s*\d", text[m.end() :]
-        ):
+        if re.search(r"[-–]\s*$", text[: m.start()]) or re.match(r"\s*[-–]\s*\d", text[m.end() :]):
             continue
         subject = unit
         if not subject:
@@ -297,6 +298,21 @@ def extract_frame(body: str, hit: _ModalityHit | None) -> Frame:
         frame.negated = True
         stripped = m.group(1) + " " + m.group(2)
     words = re.findall(r"[a-zA-Z0-9_'’./-]*[a-zA-Z][a-zA-Z0-9_'’./-]*|\S", stripped)
+    # leading adverbs/fillers are not the verb ("don't EVER force-push")
+    _pre_verb_skip = {
+        "ever",
+        "just",
+        "really",
+        "actually",
+        "simply",
+        "still",
+        "even",
+        "also",
+        "please",
+        "kindly",
+    }
+    while words and words[0].lower().strip(".,;:") in _pre_verb_skip:
+        words = words[1:]
     if not words:
         return frame
     verb = words[0].lower().strip(".,;:")
@@ -380,6 +396,15 @@ def looks_like_instruction(text: str, from_bullet: bool) -> bool:
     if detect_modality(t) is not None:
         return True
     if first in IMPERATIVE_VERBS:
+        return True
+    # declaratively-stated constraints are policy too:
+    # "Line length is capped at 88 characters." / "Timeouts are limited to 30s."
+    if re.search(
+        r"\b(?:is|are)\s+(?:capped\s+at|limited\s+to|restricted\s+to|not\s+allowed|"
+        r"forbidden|prohibited|required|mandatory|off\s+the\s+table)\b",
+        t,
+        re.IGNORECASE,
+    ):
         return True
     # bullet items starting with a bare verb-ish word are usually directives
     if from_bullet and first.endswith(("ify", "ise", "ize")) and len(words) > 1:

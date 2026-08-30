@@ -230,6 +230,16 @@ class UnitPair:
 
     @property
     def key(self) -> str:
-        """Order-independent cache key for the pair."""
-        u, v = sorted((self.a.uid, self.b.uid))
+        """Order-independent cache key for the pair.
+
+        Distinct units can share a uid (verbatim copies within one file), so
+        uid-equal pairs are disambiguated by source line to keep claim sets
+        and lane caches collision-safe; uid-distinct pairs keep the stable
+        content-addressed key so verdict caches survive line shifts.
+        """
+        ka = (self.a.uid, self.a.span.start_line)
+        kb = (self.b.uid, self.b.span.start_line)
+        (u, la), (v, lb) = sorted((ka, kb))
+        if u == v:
+            return f"{u}:{v}:{la}-{lb}"
         return f"{u}:{v}"

@@ -90,7 +90,10 @@ def generate_pairs(units: list[InstructionUnit], cfg: Config) -> list[UnitPair]:
     pairs: list[UnitPair] = []
     for (i, j), keys in sorted(candidate_keys.items()):
         a, b = units[i], units[j]
-        if a.uid == b.uid:
+        # distinct units may share a uid (verbatim copies within one file) —
+        # those pairs are exactly what DTR01's same-file arm needs, so only
+        # the same unit paired with itself is skipped
+        if a is b:
             continue
         pair = build_pair(a, b, similarity=similarities.get((i, j), 0.0))
         pair.block_keys = tuple(sorted(keys))

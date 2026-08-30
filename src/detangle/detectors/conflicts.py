@@ -6,7 +6,7 @@ The routing table (the one-sentence conflict formula factored into code):
       │yes
       ├─ numeric clash ────────────────────────────> DTC03
       ├─ cross-mechanism pair (precedence UNDOCUMENTED) ──> DTP04
-      ├─ FORBID(higher tier) vs PERMIT(lower tier) ──> DTX02
+      ├─ FORBID(precedence winner) vs PERMIT(loser) ──> DTX02
       ├─ precedence RESOLVED ──> no finding (declared hierarchy resolves it)
       ├─ scopes equal / both always-on:
       │     conditions differ ──> DTC02 (+witness)
@@ -38,13 +38,18 @@ from ..lexicons import FORMAT_EXCLUSIVE_RE, FORMAT_TOKENS
 from ..taxonomy import Severity
 from .base import AnalysisContext, Detector
 
+# the witness template supplies its own "When …", so a subordinator already
+# carried by the condition text would double up ("When when working …")
+_LEADING_SUBORDINATOR_RE = re.compile(r"^(?:when(?:ever)?|if|while)\s+", re.IGNORECASE)
+
 
 def _witness(pair: UnitPair) -> str:
     """Synthesize the boundary-condition scenario in English (van Lamsweerde)."""
     conds: list[str] = []
     for u in (pair.a, pair.b):
         if u.frame.condition:
-            conds.append(u.frame.condition.lower().rstrip("."))
+            cond = u.frame.condition.lower().rstrip(".")
+            conds.append(_LEADING_SUBORDINATOR_RE.sub("", cond) or cond)
         elif u.activation.mode == ActivationMode.PATH and u.activation.globs:
             conds.append(f"working under {', '.join(u.activation.globs)}")
         elif u.activation.mode == ActivationMode.MODEL:
@@ -112,6 +117,10 @@ class ConflictRouter(Detector):
         for pair in ctx.pairs:
             if ctx.is_claimed(pair):
                 continue
+            # descriptive sentences kept only for their defined terms carry
+            # default (unknown) frames — never treat them as prescriptions
+            if not (pair.a.is_instruction and pair.b.is_instruction):
+                continue
             d = find_disagreement(pair.a, pair.b)
             if d is None:
                 continue
@@ -154,8 +163,11 @@ class ConflictRouter(Detector):
                 Severity.ADVISORY,
             )
 
-        # permission-widening across tiers: security gate, checked before the
-        # generic permit/forbid class
+        # permission-widening across precedence levels: security gate, checked
+        # before the generic permit/forbid class. Raw tier numbers are only
+        # meaningful within one mechanism (and positional mechanisms invert
+        # them), so fire only when the pair's own precedence relation names
+        # the forbidding side as the winner.
         forbid_u, permit_u = None, None
         for u, v in ((a, b), (b, a)):
             if u.frame.modality == Modality.FORBID and v.frame.modality == Modality.PERMIT:
@@ -163,13 +175,17 @@ class ConflictRouter(Detector):
         if (
             forbid_u is not None
             and permit_u is not None
-            and permit_u.tier > forbid_u.tier
+            and prec.kind in {PrecedenceKind.RESOLVED, PrecedenceKind.POSITIONAL}
+            and prec.higher is forbid_u
             and forbid_u.frame.strength.value == "hard"
         ):
             return self._finding(
                 pair,
                 "DTX02",
-                (f"A lower-precedence unit permits what a higher tier forbids: {d.detail}."),
+                (
+                    f"A lower-precedence unit permits what a higher-precedence "
+                    f"unit forbids: {d.detail}."
+                ),
                 Severity.ERROR,
             )
 
@@ -177,13 +193,15 @@ class ConflictRouter(Detector):
         ca = a.frame.condition.strip().lower()
         cb = b.frame.condition.strip().lower()
         conditional = (ca or cb) and ca != cb
+
+        srel = scope_relation(a, b)
+        # identical scopes are the same-scope case, not a partial overlap
         both_path_overlap = (
             pair.co_active == CoActiveClass.CONDITIONAL_OVERLAPPING
             and a.activation.mode == ActivationMode.PATH
             and b.activation.mode == ActivationMode.PATH
+            and srel != "equal"
         )
-
-        srel = scope_relation(a, b)
 
         if cross_mech:
             if a.file.mechanism != b.file.mechanism:
@@ -221,6 +239,23 @@ class ConflictRouter(Detector):
             )
 
         if conditional and srel in {"equal", "unknown"}:
+            # a deliberate carve-out ("only when reverting a broken deploy",
+            # "unless the user asks") on exactly one side is an intentional
+            # exception to the other's default — fragile, not conflicting
+            exc_a = has_exception_marker(a.text)
+            exc_b = has_exception_marker(b.text)
+            if exc_a != exc_b:
+                return self._finding(
+                    pair,
+                    "DTP03",
+                    (
+                        f"Fragile exception: one side carves a deliberate exception out "
+                        f"of the other's default ({d.detail}); nothing but wording "
+                        f"protects the carve-out."
+                    ),
+                    Severity.ADVISORY,
+                    witness=_witness(pair),
+                )
             return self._finding(
                 pair,
                 "DTC02",
@@ -313,6 +348,8 @@ class FormatConflictDetector(Detector):
         out: list[Finding] = []
         for pair in ctx.pairs:
             if ctx.is_claimed(pair):
+                continue
+            if not (pair.a.is_instruction and pair.b.is_instruction):
                 continue
             fa = _format_constraint(pair.a)
             fb = _format_constraint(pair.b)

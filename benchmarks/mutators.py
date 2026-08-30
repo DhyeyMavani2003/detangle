@@ -8,6 +8,8 @@ labeled defect, and returns ``(mutated_tree, injection_record)`` where::
         "operator": str,
         "expected_codes": [str, ...],   # codes that count as a detection
         "files": [str, ...],            # files touched/created by the injection
+        "sites": [{"file": str, "text": str}, ...],  # the two conflicting
+                                        # texts (for pair-granular scoring)
         "description": str,
         "control": bool,                # equivalent-mutant control?
     }
@@ -18,6 +20,17 @@ its meaning — any conflict-class finding on a control run is a false positive.
 
 Operators never modify the input dict; all randomness flows through
 ``random.Random(seed)`` so a (tree, operator, seed) triple is reproducible.
+
+HONESTY CAVEAT (measured, not hypothetical): these operators select and phrase
+injections through detangle's OWN parser and lexicons — ``_line_qualifies``
+imports ``extract_frame``/``detect_modality``, the format templates match the
+detector's ``FORMAT_EXCLUSIVE_RE``, and ``_BOUND_RE``'s comparators are a
+subset of ``COMPARATOR_PHRASES``. The detection rate they yield is therefore
+*in-distribution self-consistency*, not generalization: it answers "does the
+pipeline catch conflicts phrased in its own vocabulary?" and nothing more.
+Recall on novel, realistic phrasings is measured separately by the
+hand-authored :mod:`benchmarks.holdout` set, and the eval report labels the
+two numbers accordingly.
 """
 
 from __future__ import annotations
@@ -220,14 +233,31 @@ def _record(
     files: list[str],
     description: str,
     control: bool = False,
+    sites: list[tuple[str, str]] | None = None,
 ) -> Record:
-    return {
+    """Build an injection record.
+
+    ``sites`` names the two halves of the seeded conflict as ``(file, text)``
+    pairs (text without the ``- `` bullet prefix). When present, ``run_eval``
+    scores the run pair-granularly: a finding only counts if its evidence
+    touches BOTH sites. Omit it (controls, or operators where the pair is not
+    well-defined) to fall back to file-granular scoring.
+    """
+    rec: Record = {
         "operator": operator,
         "expected_codes": list(expected),
         "files": sorted(set(files)),
         "description": description,
         "control": control,
     }
+    if sites is not None:
+        rec["sites"] = [{"file": f, "text": t} for f, t in sites]
+    return rec
+
+
+def _bullet_text(line: str) -> str:
+    """The instruction text of a ``- ...`` bullet line."""
+    return line[2:].strip() if line.startswith("- ") else line.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +277,7 @@ def deontic_flip(tree: Tree, seed: int) -> tuple[Tree, Record]:
         ["DTC01", "DTP04"],
         [src, target],
         f"negated copy of {src!r} obligation injected into {target!r}: {flipped[2:]!r}",
+        sites=[(src, _bullet_text(line)), (target, _bullet_text(flipped))],
     )
 
 
@@ -292,6 +323,7 @@ def parameter_clash(tree: Tree, seed: int) -> tuple[Tree, Record]:
         ["DTC03"],
         [src, target],
         f"{line[2:]!r} in {src!r} vs injected {clashing[2:]!r} in {target!r}",
+        sites=[(src, _bullet_text(line)), (target, _bullet_text(clashing))],
     )
 
 
@@ -342,11 +374,13 @@ def scope_overlap_clash(tree: Tree, seed: int) -> tuple[Tree, Record]:
     new_files = _scoped_rule_files(tree, glob_a, glob_b, pos, neg)
     mutated = dict(tree)
     mutated.update(new_files)
+    paths = list(new_files)
     return mutated, _record(
         "scope_overlap_clash",
         ["DTP02", "DTC02"],
-        list(new_files),
+        paths,
         f"opposite prescriptions on intersecting scopes {glob_a!r} vs {glob_b!r}: {pos!r}",
+        sites=[(paths[0], pos), (paths[1], neg)],
     )
 
 
@@ -376,6 +410,7 @@ def conditional_contradiction(tree: Tree, seed: int) -> tuple[Tree, Record]:
         ["DTC02", "DTC01"],
         [target],
         f"guarded contradiction injected into {target!r}: {pos[2:]!r} vs {neg[2:]!r}",
+        sites=[(target, _bullet_text(pos)), (target, _bullet_text(neg))],
     )
 
 
@@ -411,6 +446,7 @@ def terminology_drift(tree: Tree, seed: int) -> tuple[Tree, Record]:
         ["DTR03"],
         [file_a, file_b],
         f"term {term!r} defined differently in {file_a!r} and {file_b!r}",
+        sites=[(file_a, _bullet_text(def_a)), (file_b, _bullet_text(def_b))],
     )
 
 
@@ -446,6 +482,7 @@ def cross_layer_clash(tree: Tree, seed: int) -> tuple[Tree, Record]:
         ["DTP04", "DTC01"],
         [src, target],
         f"model-triggered body {target!r} contradicts {src!r}: {flipped[2:]!r}",
+        sites=[(src, _bullet_text(line)), (target, _bullet_text(flipped))],
     )
 
 
@@ -468,6 +505,7 @@ def duplicate_injection(tree: Tree, seed: int) -> tuple[Tree, Record]:
         ["DTR01", "DTR02"],
         [src, target],
         f"verbatim copy of {line[2:]!r} from {src!r} into {target!r}",
+        sites=[(src, _bullet_text(line)), (target, _bullet_text(line))],
     )
 
 
@@ -500,6 +538,7 @@ def format_clash(tree: Tree, seed: int) -> tuple[Tree, Record]:
         ["DTC04"],
         [file_a, file_b],
         f"exclusive format constraints injected: {line_a[2:]!r} vs {line_b[2:]!r}",
+        sites=[(file_a, _bullet_text(line_a)), (file_b, _bullet_text(line_b))],
     )
 
 
@@ -548,29 +587,33 @@ def trigger_overlap(tree: Tree, seed: int) -> tuple[Tree, Record]:
     mutated = dict(tree)
     if model_files:
         src = str(_pick(rng, model_files))
-        desc = _tweak_description(_description_of(tree[src]), rng)
+        src_desc = _description_of(tree[src])
+        desc = _tweak_description(src_desc, rng)
         twin_path, twin_text = _twin_file(
             src, "injected-twin", desc, "Follow the sibling rule for this task."
         )
         mutated[twin_path] = twin_text
         files = [src, twin_path]
+        sites = [(src, src_desc), (twin_path, desc)]
         detail = f"near-duplicate of {src!r} trigger description as {twin_path!r}"
     else:
         # no model-triggered surface: seed a colliding pair of skills
+        desc_b = _tweak_description(_FALLBACK_DESC, rng)
         path_a, text_a = _twin_file(
             "SKILL.md", "injected-twin-a", _FALLBACK_DESC, "Collect the merged changes first."
         )
         path_b, text_b = _twin_file(
             "SKILL.md",
             "injected-twin-b",
-            _tweak_description(_FALLBACK_DESC, rng),
+            desc_b,
             "Summarize what shipped, then post it.",
         )
         mutated[path_a] = text_a
         mutated[path_b] = text_b
         files = [path_a, path_b]
+        sites = [(path_a, _FALLBACK_DESC), (path_b, desc_b)]
         detail = f"two new skills with colliding trigger descriptions: {path_a!r}, {path_b!r}"
-    return mutated, _record("trigger_overlap", ["DTS01"], files, detail)
+    return mutated, _record("trigger_overlap", ["DTS01"], files, detail, sites=sites)
 
 
 # ---------------------------------------------------------------------------

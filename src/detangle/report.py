@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import quote
 
 from . import __version__
 from .findings import Finding
@@ -71,16 +72,18 @@ def render_console(result: ScanResult, verbose: bool = False) -> None:
 
         console.print(Panel(body, title=title, title_align="left", border_style=color))
 
+    # Suppression reasons and corpus warnings are user-controlled text: render
+    # them as plain Text so bracket sequences are not parsed as rich markup.
     if result.suppressed and verbose:
         console.print(f"[dim]{len(result.suppressed)} finding(s) suppressed:[/dim]")
         for f, sup in result.suppressed:
             console.print(
-                f"  [dim]{f.fingerprint} — {sup.reason or 'no justification given'}[/dim]"
+                Text(f"  {f.fingerprint} — {sup.reason or 'no justification given'}", style="dim")
             )
     if result.warnings and verbose:
         console.print("[dim]notes:[/dim]")
         for w in result.warnings:
-            console.print(f"  [dim]· {w}[/dim]")
+            console.print(Text(f"  · {w}", style="dim"))
 
     counts = result.counts()
     if counts:
@@ -180,7 +183,9 @@ def render_sarif(result: ScanResult) -> str:
         locations = [
             {
                 "physicalLocation": {
-                    "artifactLocation": {"uri": ev.span.path},
+                    # SARIF requires a valid RFC 3986 URI reference: percent-
+                    # encode spaces/non-ASCII, keeping '/' as the separator.
+                    "artifactLocation": {"uri": quote(ev.span.path, safe="/")},
                     "region": {
                         "startLine": ev.span.start_line,
                         "endLine": max(ev.span.end_line, ev.span.start_line),

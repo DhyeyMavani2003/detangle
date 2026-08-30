@@ -86,6 +86,18 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
     def bad(msg: str) -> ConfigError:
         return ConfigError(f"{src}: {msg}")
 
+    def as_int(name: str, val: Any) -> int:
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            raise bad(f"'{name}' must be an integer, got {val!r}") from None
+
+    def as_float(name: str, val: Any) -> float:
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            raise bad(f"'{name}' must be a number, got {val!r}") from None
+
     if "ecosystems" in tbl:
         eco = tbl["ecosystems"]
         if not isinstance(eco, list) or not all(isinstance(e, str) for e in eco):
@@ -105,13 +117,13 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
         cfg.fail_on = _SEVERITY_NAMES[name]
 
     if "conflict_budget" in tbl:
-        cfg.conflict_budget = int(tbl["conflict_budget"])
+        cfg.conflict_budget = as_int("conflict_budget", tbl["conflict_budget"])
     if "include_soft" in tbl:
         cfg.include_soft = bool(tbl["include_soft"])
     if "max_pairs" in tbl:
-        cfg.max_pairs = int(tbl["max_pairs"])
+        cfg.max_pairs = as_int("max_pairs", tbl["max_pairs"])
     if "similarity_threshold" in tbl:
-        cfg.similarity_threshold = float(tbl["similarity_threshold"])
+        cfg.similarity_threshold = as_float("similarity_threshold", tbl["similarity_threshold"])
     if "ignore" in tbl:
         ig = tbl["ignore"]
         if not isinstance(ig, list):
@@ -142,7 +154,7 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
     jury = tbl.get("jury", {})
     if isinstance(jury, dict):
         cfg.jury_model = str(jury.get("model", cfg.jury_model))
-        cfg.jury_max_pairs = int(jury.get("max_pairs", cfg.jury_max_pairs))
+        cfg.jury_max_pairs = as_int("jury.max_pairs", jury.get("max_pairs", cfg.jury_max_pairs))
 
     nli = tbl.get("nli", {})
     if isinstance(nli, dict):

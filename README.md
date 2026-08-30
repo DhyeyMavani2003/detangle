@@ -74,13 +74,26 @@ What makes the analysis different from a format linter:
 
 ## Install
 
+detangle is not yet published to PyPI. Until the first release, install from source:
+
+```bash
+git clone https://github.com/DhyeyMavani2003/detangle
+cd detangle
+pip install .              # deterministic core (no ML dependencies)
+pip install '.[nli]'       # + local NLI cross-encoder lane
+pip install '.[jury]'      # + LLM jury lane (needs ANTHROPIC_API_KEY)
+```
+
+(`pip install git+https://github.com/DhyeyMavani2003/detangle` also works once this code
+is on the default branch.)
+
+Once published to PyPI, this becomes:
+
 ```bash
 pip install detangle            # deterministic core (no ML dependencies)
 pip install 'detangle[nli]'     # + local NLI cross-encoder lane
 pip install 'detangle[jury]'    # + LLM jury lane (needs ANTHROPIC_API_KEY)
 ```
-
-Or from this repo: `pip install git+https://github.com/DhyeyMavani2003/detangle`.
 
 ## Use
 
@@ -138,19 +151,30 @@ Suppress a single finding where it occurs, with a required justification:
 
 Full details in [docs/ecosystems.md](docs/ecosystems.md).
 
-## Benchmark
+## Benchmark — honest numbers
 
-`benchmarks/` contains the seeded-conflict evaluation harness: clean config trees, nine
-conflict-injection operators (deontic flip, parameter clash, scope-overlap clash, conditional
-contradiction, terminology drift, cross-layer clash, duplication, format clash, trigger
-overlap), and equivalent-mutant controls to measure false-positive rates:
+`benchmarks/` contains a two-tier evaluation harness, and the two tiers measure different
+things:
 
 ```bash
 python -m benchmarks.run_eval
 ```
 
-Detection and false-positive rates per operator are how detangle's thresholds get set —
-measured, not guessed.
+- **Mutation suite (in-distribution):** nine conflict-injection operators over clean config
+  trees, with equivalent-mutant controls. Current: 108/108 pair-granular detection,
+  0/24 control false positives. This measures **self-consistency** — the injections are
+  phrased in vocabulary the deterministic lane understands — not generalization.
+- **Holdout (novel phrasings):** hand-authored conflicts in realistic, hedged, colloquial
+  wording written *without* consulting detangle's lexicons, plus benign-but-tricky trees.
+  Current: **recall 5/26 (19%), false positives 0/17**.
+
+That gap is the honest shape of a deterministic lane, and it is why the research plan is a
+*multiplex*: the deterministic core catches the crisp classes (numerics, duplicates,
+matched-frame contradictions, structural/precedence/budget issues) at near-zero false-positive
+cost, while paraphrased and hedged conflicts are exactly what the optional [NLI and jury
+lanes](docs/lanes.md) exist to recover. Adversarially-verified false-positive shapes from
+real repos (target-vs-trigger numeric bands, do-X-instead refinements, purpose clauses) are
+encoded as permanent precision gates and regression tests.
 
 ## Roadmap
 

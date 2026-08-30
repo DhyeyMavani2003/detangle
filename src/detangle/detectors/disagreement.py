@@ -56,7 +56,11 @@ _KNOWN_VERBS = IMPERATIVE_VERBS | _EXTRA_VERBS
 
 
 def _plausible_verb(action: str) -> bool:
-    return action in _KNOWN_VERBS
+    if action in _KNOWN_VERBS:
+        return True
+    # hyphenated compounds count when a component is a known verb
+    # ("force-push", "re-run", "cherry-pick")
+    return "-" in action and any(part in _KNOWN_VERBS for part in action.split("-"))
 
 
 @dataclass
@@ -85,12 +89,31 @@ def _obj_head(obj: str) -> str:
     return _OBJ_NORMALIZE.get(head, head)
 
 
+# the ONLY verbs specific enough to relate two uses without object identity:
+# each names one unambiguous operation ("force-push", "amend") — dogfooding
+# showed anything broader ("verify", "build", "wait") relates unrelated rules
+_SELF_CONTAINED_VERBS = frozenset(
+    ["amend", "rebase", "squash", "stash", "revert", "force-push", "cherry-pick"]
+)
+
+
+def _verb_self_contained(action: str) -> bool:
+    if action in _SELF_CONTAINED_VERBS:
+        return True
+    return "-" in action and any(p in _KNOWN_VERBS for p in action.split("-"))
+
+
 def _objects_match(a: InstructionUnit, b: InstructionUnit) -> bool:
     oa, ob = a.frame.obj, b.frame.obj
     if not oa or not ob:
-        # empty objects never match: on real repos the pairs whose object
-        # extraction failed on both sides were overwhelmingly unrelated
-        return False
+        # empty objects only match when the verb alone identifies the
+        # operation ('force-push', 'amend'); on real repos everything
+        # broader related unrelated rules
+        return bool(
+            a.frame.action
+            and a.frame.action == b.frame.action
+            and _verb_self_contained(a.frame.action)
+        )
     if oa == ob:
         return True
     ha, hb = _obj_head(oa), _obj_head(ob)
@@ -223,6 +246,16 @@ def _dimension(q: Quantity) -> tuple[str, float]:
 _ANCHOR_RE = None
 
 
+def _singular(word: str) -> str:
+    """Singularize an anchor noun so plural/singular spellings unify
+    ('retries' -> 'retry', 'attempts' -> 'attempt')."""
+    if word.endswith("ies"):
+        return word[:-3] + "y"
+    if word.endswith("s"):
+        return word[:-1]
+    return word
+
+
 def _anchors(text: str) -> frozenset[str]:
     """Nouns that identify WHICH quantity a sentence constrains."""
     global _ANCHOR_RE
@@ -235,10 +268,16 @@ def _anchors(text: str) -> frozenset[str]:
             r"iterations?|deadlines?)\b",
             re.IGNORECASE,
         )
-    return frozenset(m.lower().rstrip("s") for m in _ANCHOR_RE.findall(text))
+    return frozenset(_singular(m.lower()) for m in _ANCHOR_RE.findall(text))
 
 
-def _subjects_comparable(qa: Quantity, qb: Quantity, text_a: str = "", text_b: str = "") -> bool:
+def _subjects_comparable(
+    qa: Quantity,
+    qb: Quantity,
+    text_a: str = "",
+    text_b: str = "",
+    frames_match: bool = False,
+) -> bool:
     if qa.subject and qa.subject == qb.subject:
         # same-dimension units used as bare subjects still need a shared
         # anchor noun: "global timeout 20 min" vs "refetch interval 3s" are
@@ -246,6 +285,15 @@ def _subjects_comparable(qa: Quantity, qb: Quantity, text_a: str = "", text_b: s
         if qa.subject == qa.unit and _dimension(qa)[0] == "time":
             aa, ab = _anchors(text_a), _anchors(text_b)
             return not aa or not ab or bool(aa & ab)
+        if qa.subject == qa.unit and _dimension(qa)[0] == "text":
+            # counts of chars/words: the bare unit does not identify the knob
+            # ("wrap code at 100 chars" vs "commit subject 72 chars" are
+            # different limits) — require the same (action, object) frame or
+            # a shared anchor noun before comparing
+            if frames_match:
+                return True
+            aa, ab = _anchors(text_a), _anchors(text_b)
+            return bool(aa & ab)
         return True
     da, db = _dimension(qa), _dimension(qb)
     if da[0] and da[0] == db[0] and da[0] != "text":
@@ -269,9 +317,10 @@ def quantities_conflict(a: InstructionUnit, b: InstructionUnit) -> Disagreement 
     - bare 'percent' quantities are only comparable when actions match.
     """
     actions_same = _actions_match(a, b)
+    frames_match = actions_same and _objects_match(a, b)
     for qa in a.quantities:
         for qb in b.quantities:
-            if not _subjects_comparable(qa, qb, a.text, b.text):
+            if not _subjects_comparable(qa, qb, a.text, b.text, frames_match=frames_match):
                 continue
             if qa.raw and qa.raw in a.frame.condition:
                 continue

@@ -48,6 +48,10 @@ class Finding:
         parts = [self.code] + sorted(u.uid for u in self.units)
         if not self.units:
             parts += [f"{e.span.path}:{e.span.start_line}" for e in self.evidence]
+            # distinct unit-less findings of the same code can anchor on the
+            # same line (e.g. two DTX01 character classes) — the message is
+            # what tells them apart
+            parts.append(self.message)
         h = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:12]
         return f"{self.code}:{h}"
 

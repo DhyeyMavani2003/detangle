@@ -16,12 +16,53 @@ import yaml
 
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n(?:---|\.\.\.)\s*(?:\n|\Z)", re.DOTALL)
 
+# Activation-bearing keys worth salvaging from frontmatter that is not valid
+# YAML (Cursor itself writes ``globs: *.tsx,*.ts`` in .mdc files — an
+# undefined-alias error to a YAML parser, but real activation semantics).
+_FM_SALVAGE_KEYS = (
+    "alwaysApply",
+    "always_apply",
+    "applyTo",
+    "description",
+    "globs",
+    "name",
+    "paths",
+)
+_FM_SALVAGE_RE = re.compile(
+    r"^(?P<key>" + "|".join(_FM_SALVAGE_KEYS) + r")\s*:\s*(?P<val>\S.*?)\s*$"
+)
+
+
+def _frontmatter_fallback(raw: str) -> dict[str, Any]:
+    """Line-wise salvage of simple ``key: value`` scalars from invalid YAML.
+
+    Only well-known activation keys are recovered, and only when the value
+    looks like a plain scalar — precision-first: structural values are left
+    alone, so truly malformed frontmatter still reads as empty.
+    """
+    out: dict[str, Any] = {}
+    for line in raw.split("\n"):
+        m = _FM_SALVAGE_RE.match(line)
+        if not m:
+            continue
+        key, val = m.group("key"), m.group("val")
+        if val[0] in "[{|>":
+            continue  # YAML flow/block structure, not a plain scalar
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]
+        if key in ("alwaysApply", "always_apply") and val.lower() in ("true", "false"):
+            out[key] = val.lower() == "true"
+        elif val:
+            out[key] = val
+    return out
+
 
 def split_frontmatter(text: str) -> tuple[dict[str, Any], str, int]:
     """Return (frontmatter dict, body, body_start_line 1-based).
 
-    Malformed YAML yields an empty dict (ecosystems skip malformed
-    frontmatter silently; we surface that elsewhere as a parser note).
+    Malformed YAML yields the salvageable simple ``key: value`` scalars
+    (Cursor's own loose .mdc frontmatter is not strict YAML), or an empty
+    dict when nothing is recoverable.
     """
     m = _FRONTMATTER_RE.match(text)
     if not m:
@@ -32,7 +73,7 @@ def split_frontmatter(text: str) -> tuple[dict[str, Any], str, int]:
     try:
         data = yaml.safe_load(raw)
     except yaml.YAMLError:
-        return {}, body, body_start
+        return _frontmatter_fallback(raw), body, body_start
     if not isinstance(data, dict):
         data = {}
     return data, body, body_start
@@ -54,6 +95,12 @@ _BULLET_RE = re.compile(r"^(\s*)(?:[-*+]|\d{1,3}[.)])\s+(.*)$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 _COMMENT_RE = re.compile(r"<!--(.*?)-->", re.DOTALL)
+_FENCE_RE = re.compile(r"^(\s*)(```+|~~~+)")
+
+
+def _fence_close_re(marker: str) -> re.Pattern[str]:
+    """A closing fence is the marker alone on its line (same or longer run)."""
+    return re.compile(rf"^\s*{re.escape(marker[0])}{{{len(marker)},}}\s*$")
 
 
 def parse_blocks(text: str, start_line: int = 1) -> list[Block]:
@@ -77,11 +124,11 @@ def parse_blocks(text: str, start_line: int = 1) -> list[Block]:
             continue
 
         # fenced code
-        fence = re.match(r"^(\s*)(```+|~~~+)", line)
+        fence = _FENCE_RE.match(line)
         if fence:
-            marker = fence.group(2)[:3]
+            close = _fence_close_re(fence.group(2))
             j = i + 1
-            while j < n and marker not in lines[j]:
+            while j < n and not close.match(lines[j]):
                 j += 1
             blocks.append(
                 Block(
@@ -118,6 +165,8 @@ def parse_blocks(text: str, start_line: int = 1) -> list[Block]:
                     break
                 if _BULLET_RE.match(nxt) or _HEADING_RE.match(nxt):
                     break
+                if _FENCE_RE.match(nxt):
+                    break  # nested fence: let the main loop emit it as code
                 if len(nxt) - len(nxt.lstrip()) <= indent:
                     break
                 body.append(nxt.strip())
@@ -147,7 +196,7 @@ def parse_blocks(text: str, start_line: int = 1) -> list[Block]:
                 break
             if _HEADING_RE.match(nxt) or _BULLET_RE.match(nxt) or _TABLE_ROW_RE.match(nxt):
                 break
-            if re.match(r"^(\s*)(```+|~~~+)", nxt):
+            if _FENCE_RE.match(nxt):
                 break
             para.append(nxt.strip())
             j += 1

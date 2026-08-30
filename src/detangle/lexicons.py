@@ -438,6 +438,8 @@ COMPARATOR_PHRASES: tuple[tuple[str, str], ...] = (
     (r"no[t]?\s+longer\s+than", "<="),
     (r"no[t]?\s+(?:higher|greater|larger|bigger)\s+than", "<="),
     (r"no[t]?\s+(?:lower|smaller)\s+than", ">="),
+    (r"(?:is\s+|are\s+)?capped\s+at", "<="),
+    (r"(?:is\s+|are\s+)?limited\s+to", "<="),
     (r"at\s+most", "<="),
     (r"no\s+more\s+than", "<="),
     (r"not\s+more\s+than", "<="),
@@ -455,6 +457,7 @@ COMPARATOR_PHRASES: tuple[tuple[str, str], ...] = (
     (r"min(?:imum)?\.?\s+(?:of\s+)?", ">="),
     (r"more\s+than", ">"),
     (r"over", ">"),
+    (r"(?:runs?\s+|goes?\s+)?past", ">"),
     (r"longer\s+than", ">"),
     (r"(?:greater|higher|larger|bigger)\s+than", ">"),
     (r"above", ">"),
@@ -584,7 +587,7 @@ CONDITION_LEADERS = (
 
 EXCEPTION_MARKERS_RE = re.compile(
     r"\b(unless|except|excluding|other\s+than|apart\s+from|save\s+for|but\s+not|"
-    r"with\s+the\s+exception\s+of)\b",
+    r"with\s+the\s+exception\s+of|only\s+(?:when|if|after|during|while|for))\b",
     re.IGNORECASE,
 )
 

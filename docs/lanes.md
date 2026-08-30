@@ -79,9 +79,9 @@ The research shortlist for stronger setups, in order:
 3. `tasksource/deberta-base-long-nli` — 1280-token context, for whole-section premises.
 
 Avoid `facebook/bart-large-mnli` (outdated HF zero-shot default) and the
-`deberta-v3-large-zeroshot-v2.0` family (binary head). Note: the shipped lane currently always
-loads the default model — there is no `.detangle.toml` key for the NLI model yet; swapping it
-requires constructing `NliScorer(model_name=...)` programmatically.
+`deberta-v3-large-zeroshot-v2.0` family (binary head). To swap in a substitute, set
+`[detangle.nli] model = "..."` in `.detangle.toml`
+(see [docs/configuration.md](configuration.md)).
 
 **Banding thresholds.** Symmetrized contradiction probability is banded at `TAU_LOW = 0.25`
 (gray-zone floor) and `TAU_HIGH = 0.88` (auto-flag). These were calibrated on the seeded

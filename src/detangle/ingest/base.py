@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -85,12 +86,37 @@ def _load_gitignore(root: Path) -> tuple[str, ...]:
     return tuple(patterns)
 
 
+def _gitignore_match(pattern: str, path: str) -> bool:
+    """Match one .gitignore pattern, honoring git's leading-slash root anchor.
+
+    glob_match treats bare patterns as match-anywhere (``**/pattern``), but a
+    gitignore pattern that starts with ``/`` is anchored to the repo root, so
+    the any-depth fallback must not apply to it.
+    """
+    from ..globs import glob_match
+
+    if not pattern.startswith("/"):
+        return glob_match(pattern, path)
+    body = pattern.lstrip("/")
+    if not body:
+        return False
+    if "/" in body.rstrip("/"):
+        # An inner slash already suppresses glob_match's any-depth fallback.
+        return glob_match(body, path)
+    # A root-anchored bare name: match the root entry itself, or — since an
+    # ignored directory ignores everything beneath it — any path under a
+    # matching root directory. Never match the same name at deeper levels.
+    name = body.rstrip("/")
+    first, _, rest = path.lstrip("/").partition("/")
+    if not fnmatch.fnmatchcase(first, name):
+        return False
+    return bool(rest) or not body.endswith("/")
+
+
 def walk_repo(
     root: Path, ignore_globs: tuple[str, ...] = (), respect_gitignore: bool = True
 ) -> list[str]:
     """Repo-relative posix paths of all files, skipping vendored/derived dirs."""
-    from ..globs import glob_match
-
     gitignore = _load_gitignore(root) if respect_gitignore else ()
     out: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -99,23 +125,31 @@ def walk_repo(
             dirnames[:] = [
                 d
                 for d in dirnames
-                if not any(glob_match(g, rel(root, Path(dirpath) / d) + "/x") for g in gitignore)
+                if not any(
+                    _gitignore_match(g, rel(root, Path(dirpath) / d) + "/x") for g in gitignore
+                )
             ]
         for fn in filenames:
             p = Path(dirpath) / fn
             r = rel(root, p)
             if any(fnmatch.fnmatch(r, g) for g in ignore_globs):
                 continue
-            if gitignore and any(glob_match(g, r) for g in gitignore):
+            if gitignore and any(_gitignore_match(g, r) for g in gitignore):
                 continue
             out.append(r)
     return sorted(out)
 
 
 def read_text(path: Path, max_bytes: int = 8 * 1024 * 1024) -> str | None:
-    """Read a config file defensively; None on binary/unreadable/oversized."""
+    """Read a config file defensively; None on non-regular/binary/unreadable/oversized.
+
+    Only regular files are opened: a FIFO (or socket/device) named like a
+    config file would otherwise block the scan forever. A UTF-8 BOM is
+    stripped so frontmatter detection still anchors at column 0.
+    """
     try:
-        if path.stat().st_size > max_bytes:
+        st = path.stat()
+        if not stat.S_ISREG(st.st_mode) or st.st_size > max_bytes:
             return None
         data = path.read_bytes()
     except OSError:
@@ -123,9 +157,9 @@ def read_text(path: Path, max_bytes: int = 8 * 1024 * 1024) -> str | None:
     if b"\x00" in data[:4096]:
         return None
     try:
-        return data.decode("utf-8")
+        return data.decode("utf-8-sig")
     except UnicodeDecodeError:
-        return data.decode("utf-8", errors="replace")
+        return data.decode("utf-8-sig", errors="replace")
 
 
 def discover_known_commands(root: Path, repo_files: set[str]) -> set[str]:
@@ -140,9 +174,12 @@ def discover_known_commands(root: Path, repo_files: set[str]) -> set[str]:
     for rp in repo_files:
         name = rp.rsplit("/", 1)[-1]
         if name == "package.json":
+            text = read_text(root / rp)
+            if text is None:
+                continue
             try:
-                data = json.loads((root / rp).read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                data = json.loads(text)
+            except json.JSONDecodeError:
                 continue
             scripts = data.get("scripts", {})
             if isinstance(scripts, dict):

@@ -17,9 +17,12 @@ class VerdictCache:
         self._data: dict[str, Any] = {}
         if self.path.is_file():
             try:
-                self._data = json.loads(self.path.read_text(encoding="utf-8"))
+                loaded = json.loads(self.path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
-                self._data = {}
+                loaded = {}
+            # A corrupted/hand-edited file can hold valid JSON that is not an
+            # object (a list, string, number, ...): treat it as an empty cache.
+            self._data = loaded if isinstance(loaded, dict) else {}
         self._dirty = False
 
     @staticmethod

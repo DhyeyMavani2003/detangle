@@ -37,7 +37,8 @@ class DuplicateDetector(Detector):
             if not norm_equal and sim < _DRIFT_LOW:
                 continue
 
-            if norm_equal or sim >= _DUP_THRESHOLD:
+            quantities_same = _same_quantities(a, b)
+            if norm_equal or (sim >= _DUP_THRESHOLD and quantities_same):
                 ctx.claim(pair)
                 same_file = a.file.path == b.file.path
                 out.append(
@@ -63,7 +64,11 @@ class DuplicateDetector(Detector):
             # frames to still agree (a disagreement would have been claimed by
             # the ConflictRouter) and a shared action, to avoid flagging
             # sentences that merely share a topic.
-            if a.frame.action and a.frame.action == b.frame.action and _material_word_diff(a, b):
+            if (
+                a.frame.action
+                and a.frame.action == b.frame.action
+                and (_material_word_diff(a, b) or not quantities_same)
+            ):
                 ctx.claim(pair)
                 # shared boilerplate across different model-triggered bodies
                 # (skill/subagent templates) is common and rarely drift — keep
@@ -100,6 +105,15 @@ def _material_word_diff(a, b) -> bool:
     """The two texts differ by at least one content word (not just phrasing)."""
     ta, tb = token_set(a.text), token_set(b.text)
     return bool(ta ^ tb)
+
+
+def _same_quantities(a, b) -> bool:
+    """Near-verbatim copies that pin different numbers ('retries to 3.' vs
+    'retries to 5.') are NOT 'the same prescription' — they belong to the
+    drift branch, not DTR01."""
+    qa = sorted((q.comparator, q.value, q.unit) for q in a.quantities)
+    qb = sorted((q.comparator, q.value, q.unit) for q in b.quantities)
+    return qa == qb
 
 
 class TerminologyDetector(Detector):

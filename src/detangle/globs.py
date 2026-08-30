@@ -53,6 +53,28 @@ def _norm(pattern: str) -> str:
     return p
 
 
+def _bare(pattern: str) -> bool:
+    """gitignore-ish: a pattern with no separator other than an optional
+    trailing one ('build', 'build/') matches at any depth."""
+    p = pattern.strip().replace("\\", "/")
+    if p.startswith("./"):
+        p = p[2:]
+    p = p.lstrip("/")
+    return "/" not in p.rstrip("/")
+
+
+def _class_end(s: str, j: int) -> int:
+    """Index of the closing ']' for a char class opening at ``s[j]`` (-1 when
+    unterminated). POSIX/fnmatch: a ']' first in the class body (after an
+    optional '!' negation) is a literal member, not the terminator."""
+    k = j + 1
+    if k < len(s) and s[k] == "!":
+        k += 1
+    if k < len(s) and s[k] == "]":
+        k += 1
+    return s.find("]", k)
+
+
 @lru_cache(maxsize=4096)
 def _glob_regex(pattern: str) -> re.Pattern[str]:
     """Compile a single (brace-free) glob to a full-path regex."""
@@ -72,14 +94,15 @@ def _glob_regex(pattern: str) -> re.Pattern[str]:
             elif c == "?":
                 seg += "[^/]"
             elif c == "[":
-                k = part.find("]", j + 1)
+                k = _class_end(part, j)
                 if k == -1:
                     seg += re.escape(c)
                 else:
                     body = part[j + 1 : k]
-                    if body.startswith("!"):
-                        body = "^" + body[1:]
-                    seg += f"[{body}]"
+                    neg = body.startswith("!")
+                    if neg:
+                        body = body[1:]
+                    seg += "[" + ("^" if neg else "") + body.replace("]", "\\]") + "]"
                     j = k
             else:
                 seg += re.escape(c)
@@ -98,9 +121,10 @@ def glob_match(pattern: str, path: str) -> bool:
     """
     path = path.lstrip("/")
     for pat in expand_braces(pattern):
+        bare = _bare(pat)
         pat = _norm(pat)
         candidates = [pat]
-        if "/" not in pat:
+        if bare:
             candidates.append(f"**/{pat}")
         for c in candidates:
             try:
@@ -134,7 +158,7 @@ def _tokenize_segment(seg: str) -> list[str]:
         elif c == "?":
             toks.append("?")
         elif c == "[":
-            k = seg.find("]", j + 1)
+            k = _class_end(seg, j)
             if k == -1:
                 toks.append(c)
             else:
@@ -215,9 +239,9 @@ def globs_intersect(a: str, b: str) -> bool:
     for pa in expand_braces(a):
         for pb in expand_braces(b):
             na, nb = _norm(pa), _norm(pb)
-            # bare patterns match at any depth
-            cand_a = [na] if "/" in na else [na, f"**/{na}"]
-            cand_b = [nb] if "/" in nb else [nb, f"**/{nb}"]
+            # bare patterns (trailing-slash dir globs included) match at any depth
+            cand_a = [na, f"**/{na}"] if _bare(pa) else [na]
+            cand_b = [nb, f"**/{nb}"] if _bare(pb) else [nb]
             for ca in cand_a:
                 for cb in cand_b:
                     if _paths_unify(_split_segments(ca), _split_segments(cb)):
@@ -233,11 +257,55 @@ def glob_sets_intersect(a: tuple[str, ...] | list[str], b: tuple[str, ...] | lis
 # Subset (approximate): does every path matched by `sub` also match `sup`?
 # ---------------------------------------------------------------------------
 
-_SAMPLE_FILLERS = ("x", "zq9", "a-b_c", "deep/nested/f", "UPPER")
+
+def _class_members(body: str) -> list[str]:
+    """Concrete candidate characters for a ``[...]`` class body (callers
+    validate the resulting samples, so guesses for negated classes are safe)."""
+    if body.startswith("!"):
+        return ["z", "q", "9"]
+    members: list[str] = []
+    j = 0
+    while j < len(body):
+        members.append(body[j])
+        j += 3 if body[j + 1 : j + 2] == "-" else 1
+    return members or ["x"]
+
+
+def _segment_variants(seg: str) -> list[str]:
+    """A few concrete strings for one glob segment. Fillers are deliberately
+    distinct across variants ('?' -> 'x'/'q'/'z') so a literal in a candidate
+    superset pattern cannot accidentally cover every sample."""
+    variants: list[str] = []
+    for star, qmark, pick in (("x", "x", 0), ("zq9", "q", 1), ("", "z", 0)):
+        parts: list[str] = []
+        j = 0
+        while j < len(seg):
+            c = seg[j]
+            if c == "*":
+                parts.append(star)
+            elif c == "?":
+                parts.append(qmark)
+            elif c == "[":
+                k = _class_end(seg, j)
+                if k == -1:
+                    parts.append(c)
+                else:
+                    members = _class_members(seg[j + 1 : k])
+                    parts.append(members[min(pick, len(members) - 1)])
+                    j = k
+            else:
+                parts.append(c)
+            j += 1
+        variants.append("".join(parts))
+    return [v for v in dict.fromkeys(variants) if v]
 
 
 def _samples(pattern: str) -> list[str]:
-    """Generate representative concrete paths matched by a glob."""
+    """Representative concrete paths matched by a glob.
+
+    Every returned sample is verified with ``glob_match(pattern, sample)``;
+    an empty result means sampling failed and callers must not conclude
+    anything from it (in particular, never claim subset)."""
     out: set[str] = set()
     for pat in expand_braces(pattern)[:8]:
         segs = _split_segments(pat)
@@ -250,36 +318,23 @@ def _samples(pattern: str) -> list[str]:
                     nxt.append([*b, "sub"])
                     nxt.append([*b, "sub", "dir"])
             else:
-                variants = set()
-                for filler in ("x", "zq9"):
-                    variants.add(
-                        "".join(
-                            filler if t == "*" else ("x" if t == "?" else t)
-                            for t in _tokenize_segment(seg)
-                        )
-                    )
-                # '*' also matches empty
-                variants.add(
-                    "".join(
-                        "x" if t == "?" else ("" if t == "*" else t) for t in _tokenize_segment(seg)
-                    )
-                )
-                for v in variants:
-                    if v:
-                        for b in base:
-                            nxt.append([*b, v])
+                for v in _segment_variants(seg):
+                    for b in base:
+                        nxt.append([*b, v])
             base = nxt[:64]
         for b in base:
             if b:
                 out.add("/".join(b))
-    return sorted(out)[:128]
+    return [s for s in sorted(out)[:128] if glob_match(pattern, s)]
 
 
 def glob_subset(sub: str, sup: str) -> bool:
     """Heuristic: does ``sup`` cover everything ``sub`` matches?
 
-    Structural fast paths, then adversarial sampling. False negatives are
-    possible; callers must treat True as "likely fully covered".
+    Structural fast paths, then adversarial sampling over verified samples.
+    False negatives are possible; callers must treat True as "likely fully
+    covered". When no verifiable sample exists the answer is False — subset
+    is never claimed unchecked.
     """
     ns, np_ = _norm(sub), _norm(sup)
     if ns == np_:
@@ -288,15 +343,20 @@ def glob_subset(sub: str, sup: str) -> bool:
         return True
     if not globs_intersect(sub, sup):
         return False
-    return all(glob_match(sup, s) for s in _samples(sub))
+    samples = _samples(sub)
+    if not samples:
+        return False
+    return all(glob_match(sup, s) for s in samples)
 
 
 def glob_set_subset(sub: tuple[str, ...] | list[str], sup: tuple[str, ...] | list[str]) -> bool:
     """Every glob in ``sub`` is covered by some combination of ``sup``."""
     if not sub or not sup:
         return False
-    return all(
-        any(glob_subset(s, p) for p in sup)
-        or all(any_glob_match(list(sup), smp) for smp in _samples(s))
-        for s in sub
-    )
+    for s in sub:
+        if any(glob_subset(s, p) for p in sup):
+            continue
+        smps = _samples(s)
+        if not smps or not all(any_glob_match(list(sup), smp) for smp in smps):
+            return False
+    return True

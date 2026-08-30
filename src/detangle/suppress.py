@@ -58,15 +58,20 @@ def collect_suppressions(corpus: Corpus) -> tuple[list[Suppression], list[str]]:
     sups: list[Suppression] = []
     warnings: list[str] = []
     for cf in corpus.files:
+        # cf.text is the frontmatter-stripped body for rules/skills/cursor/
+        # copilot files, but finding evidence lines are file-absolute —
+        # offset pragma lines by body_start so covers() compares like units.
+        offset = int(cf.meta.get("body_start", 1)) - 1
         for body, start, _end in find_comments(cf.text):
             m = _PRAGMA_RE.match(body)
             if not m:
                 continue
+            line = start + offset
             reason = (m.group("reason") or "").strip()
             codes = [c.strip().upper() for c in m.group("codes").split(",")]
             if not reason:
                 warnings.append(
-                    f"{cf.path}:{start}: suppression for {', '.join(codes)} has no "
+                    f"{cf.path}:{line}: suppression for {', '.join(codes)} has no "
                     "justification — add one (`detangle-ignore CODE: reason`)"
                 )
             for code in codes:
@@ -74,7 +79,7 @@ def collect_suppressions(corpus: Corpus) -> tuple[list[Suppression], list[str]]:
                     Suppression(
                         path=cf.path,
                         code=code,
-                        line=start,
+                        line=line,
                         file_wide=m.group("scope").lower() == "ignore-file",
                         reason=reason,
                     )

@@ -85,6 +85,9 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
     except ConfigError as e:
         print(f"error: {e}", file=sys.stderr)
         raise SystemExit(2) from None
+    except OSError as e:
+        print(f"error: cannot read config: {e}", file=sys.stderr)
+        raise SystemExit(2) from None
     if args.nli:
         cfg.lane_nli = True
     if args.jury:
@@ -103,29 +106,50 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
     return scan(cfg)
 
 
-def _changed_files(root: Path, base: str) -> set[str] | None:
+def _git_lines(root: Path, *args: str) -> list[str] | None:
+    """Run git under ``root``; stdout lines on success, None on any failure.
+
+    ``core.quotepath=off`` keeps non-ASCII paths literal instead of
+    octal-escaped/quoted, so they compare equal to finding evidence paths.
+    """
     try:
         out = subprocess.run(
-            ["git", "diff", "--name-only", f"{base}...HEAD"],
+            ["git", "-c", "core.quotepath=off", *args],
             cwd=root,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             check=True,
         )
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        try:
-            out = subprocess.run(
-                ["git", "diff", "--name-only", base],
-                cwd=root,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=True,
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    return out.stdout.splitlines()
+
+
+def _changed_files(root: Path, base: str) -> set[str] | None:
+    """Files changed vs ``base``, as paths relative to the scan root.
+
+    Returns None when the diff (or repo-prefix translation) cannot be
+    computed; the caller then warns and reports all findings.
+    """
+    lines = _git_lines(root, "diff", "--name-only", f"{base}...HEAD")
+    if lines is None:
+        lines = _git_lines(root, "diff", "--name-only", base)
+        if lines is None:
             return None
-    return {line.strip() for line in out.stdout.splitlines() if line.strip()}
+    names = {line.strip() for line in lines if line.strip()}
+    # git reports paths relative to the REPO root; finding evidence paths are
+    # relative to the SCAN root. When scanning a subdirectory of the repo,
+    # translate via the scan root's repo prefix (e.g. 'app/').
+    prefix_lines = _git_lines(root, "rev-parse", "--show-prefix")
+    if prefix_lines is None:
+        return None
+    prefix = prefix_lines[0].strip() if prefix_lines else ""
+    if not prefix:
+        return names
+    # Changed files outside the scan root cannot match any finding path.
+    return {n[len(prefix) :] for n in names if n.startswith(prefix)}
 
 
 def _emit(result: ScanResult, args: argparse.Namespace) -> None:
@@ -140,7 +164,11 @@ def _emit(result: ScanResult, args: argparse.Namespace) -> None:
         "markdown": render_markdown,
     }.get(args.fmt, render_json)(result)
     if args.output:
-        args.output.write_text(text, encoding="utf-8")
+        try:
+            args.output.write_text(text, encoding="utf-8")
+        except OSError as e:
+            print(f"error: cannot write {args.output}: {e}", file=sys.stderr)
+            raise SystemExit(2) from None
         print(f"wrote {args.output}")
     else:
         print(text)

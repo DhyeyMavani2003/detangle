@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 import pytest
 from benchmarks.corpus import TREES
+from benchmarks.holdout import (
+    BENIGN_CASES,
+    CONFLICT_CASES,
+    HOLDOUT_CLAIMED_CODES,
+    HOLDOUT_FP_CODES,
+)
 from benchmarks.mutators import ALL_MUTATORS, CONFLICT_CODES, CONTROLS, OPERATORS
-from benchmarks.run_eval import detected, evaluate, render_table
+from benchmarks.run_eval import (
+    detected,
+    evaluate,
+    evaluate_holdout,
+    holdout_detected,
+    pair_detected,
+    render_holdout_table,
+    render_table,
+)
 
 from detangle.config import Config
 from detangle.pipeline import ScanResult, scan
@@ -159,3 +174,121 @@ def test_control_fp_evaluation_reports_zero_on_subset() -> None:
     )
     assert report["totals"]["control_runs"] == 2
     assert report["totals"]["control_false_positives"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Pair-granular scoring (review findings #39/#43: any-code/any-file scoring
+# could credit a wrong-pair finding; detection must cover both injected sites)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("op_name", sorted(OPERATORS))
+def test_operator_records_carry_two_locatable_sites(op_name: str) -> None:
+    mutated, record = OPERATORS[op_name](TREES["claude-webapp"], seed=0)
+    sites = record.get("sites")
+    assert sites and len(sites) == 2, "every operator must record both conflict sites"
+    for site in sites:
+        assert site["file"] in record["files"]
+        assert site["file"] in mutated
+        assert str(site["text"]).strip(), "site text must be non-empty"
+        assert str(site["text"]).strip() in mutated[str(site["file"])], (
+            "site text must be locatable in the mutated tree"
+        )
+
+
+def test_pair_detected_requires_evidence_on_both_sites(tmp_path: Path) -> None:
+    mutated, record = ALL_MUTATORS["deontic_flip"](TREES["claude-webapp"], seed=0)
+    result = _scan_tree(tmp_path, mutated, "pairflip")
+    assert pair_detected(result, record, mutated)
+    # a record whose second site carries text no finding quotes (and which sits
+    # on no evidenced line) must NOT count — this is the wrong-pair guard
+    bogus = dict(record)
+    bogus["sites"] = [
+        record["sites"][0],
+        {
+            "file": record["sites"][1]["file"],
+            "text": "an utterly unrelated sentence that appears in no finding",
+        },
+    ]
+    assert not pair_detected(result, bogus, mutated)
+    # without sites the scorer falls back to file-granular semantics
+    fallback = {k: v for k, v in record.items() if k != "sites"}
+    assert pair_detected(result, fallback, mutated) == detected(result, fallback)
+
+
+def test_evaluate_reports_pair_granularity_and_unique_injections() -> None:
+    report = evaluate(tree_names=["claude-webapp"], operator_names=["deontic_flip"], seeds=(0,))
+    entry = report["operators"]["deontic_flip"]
+    assert entry["granularity"] == "pair"
+    assert entry["unique_injections"] >= 1
+    assert "detected_file_granular" in entry
+    assert "unique_injections" in report["totals"]
+    table = render_table(report)
+    assert "in-distribution" in table, "the mutation suite must be labeled as such"
+
+
+# ---------------------------------------------------------------------------
+# Holdout set (review findings #39/#40/#41: out-of-distribution measurement)
+# ---------------------------------------------------------------------------
+
+
+def test_holdout_conflict_cases_are_structurally_valid() -> None:
+    assert len(CONFLICT_CASES) >= 24
+    ids = [c["id"] for c in CONFLICT_CASES]
+    assert len(ids) == len(set(ids)), "case ids must be unique"
+    for case in CONFLICT_CASES:
+        assert case["description"], case["id"]
+        assert case["expected_codes"], case["id"]
+        assert all(code in RULES for code in case["expected_codes"]), case["id"]
+        assert case["involved_files"], case["id"]
+        assert all(f in case["tree"] for f in case["involved_files"]), case["id"]
+        assert all(isinstance(t, str) and t for t in case["tree"].values()), case["id"]
+
+
+def test_holdout_covers_every_claimed_conflict_class() -> None:
+    counts = Counter(c["expected_codes"][0] for c in CONFLICT_CASES)
+    for code in HOLDOUT_CLAIMED_CODES:
+        assert counts[code] >= 2, f"{code}: need at least two holdout cases, have {counts[code]}"
+
+
+def test_holdout_benign_cases_carry_no_conflict_expectations() -> None:
+    assert len(BENIGN_CASES) >= 16
+    ids = [c["id"] for c in BENIGN_CASES]
+    assert len(ids) == len(set(ids)), "case ids must be unique"
+    for case in BENIGN_CASES:
+        assert case["description"], case["id"]
+        assert case["tree"], case["id"]
+        # benign trees expect nothing; any conflict-class finding is an FP
+        assert not case.get("expected_codes"), case["id"]
+
+
+def test_holdout_fp_codes_span_conflict_classes_and_dtx02() -> None:
+    # DTP03 is deliberately excluded: it flags INTENTIONAL carve-outs as
+    # fragile at advisory severity — designed behavior on benign trees.
+    assert CONFLICT_CODES - {"DTP03"} <= HOLDOUT_FP_CODES
+    assert "DTP03" not in HOLDOUT_FP_CODES
+    assert "DTX02" in HOLDOUT_FP_CODES
+    assert all(code in RULES for code in HOLDOUT_FP_CODES)
+
+
+def test_holdout_eval_runs_and_reports_shape() -> None:
+    subset = [str(CONFLICT_CASES[0]["id"]), str(BENIGN_CASES[0]["id"])]
+    report = evaluate_holdout(case_ids=subset)
+    assert report["suite"] == "holdout (novel phrasings)"
+    assert report["totals"]["conflict_cases"] == 1
+    assert report["totals"]["benign_cases"] == 1
+    assert 0.0 <= report["totals"]["recall"] <= 1.0
+    assert 0.0 <= report["totals"]["fp_rate"] <= 1.0
+    assert report["per_code"], "per-code recall must be reported"
+    table = render_holdout_table(report)
+    assert "holdout (novel phrasings)" in table
+    assert "recall" in table
+
+
+def test_holdout_detected_requires_touching_every_involved_file(tmp_path: Path) -> None:
+    # a case detangle demonstrably catches, to exercise the strict criterion
+    case = next(c for c in CONFLICT_CASES if c["id"] == "dtr01-cross-file-duplicate")
+    result = _scan_tree(tmp_path, dict(case["tree"]), "holdout-dup")
+    assert holdout_detected(result, case)
+    bogus = dict(case, involved_files=list(case["involved_files"]) + ["no/such/file.md"])
+    assert not holdout_detected(result, bogus)
