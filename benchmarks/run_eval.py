@@ -75,6 +75,7 @@ def scan_tree(
     jury_max_pairs: int = 6,
     jury_model: str = "",
     screen_model: str = "",
+    cache_dir: Path | None = None,
 ) -> ScanResult:
     """Materialize into a temp dir and run the pipeline.
 
@@ -94,6 +95,9 @@ def scan_tree(
             cfg.jury_model = jury_model
         if screen_model:
             cfg.screen_model = screen_model
+        # a persistent verdict/screen cache makes long LLM evals restartable
+        # (uids are content+relpath addressed, so keys survive the temp dirs)
+        cfg.cache_dir = cache_dir
         return scan(cfg)
 
 
@@ -367,6 +371,7 @@ def evaluate_holdout(
     lanes: tuple[str, ...] = (),
     jury_model: str = "",
     screen_model: str = "",
+    cache_dir: Path | None = None,
 ) -> dict:
     """Run the hand-authored holdout set; returns the JSON-serializable report.
 
@@ -383,7 +388,11 @@ def evaluate_holdout(
         if wanted is not None and case["id"] not in wanted:
             continue
         result = scan_tree(  # type: ignore[arg-type]
-            dict(case["tree"]), lanes=lanes, jury_model=jury_model, screen_model=screen_model
+            dict(case["tree"]),
+            lanes=lanes,
+            jury_model=jury_model,
+            screen_model=screen_model,
+            cache_dir=cache_dir,
         )
         hit = holdout_detected(result, case)
         lenient_hit = holdout_detected_lenient(result, case)
@@ -408,7 +417,11 @@ def evaluate_holdout(
         if wanted is not None and case["id"] not in wanted:
             continue
         result = scan_tree(  # type: ignore[arg-type]
-            dict(case["tree"]), lanes=lanes, jury_model=jury_model, screen_model=screen_model
+            dict(case["tree"]),
+            lanes=lanes,
+            jury_model=jury_model,
+            screen_model=screen_model,
+            cache_dir=cache_dir,
         )
         fp_codes = sorted({f.code for f in result.findings if f.code in HOLDOUT_FP_CODES})
         benign_results.append(
@@ -574,6 +587,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--jury-model", default="", help="jury model override (backend-shaped)")
     p.add_argument("--screen-model", default="", help="screen model override (backend-shaped)")
+    p.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=None,
+        help="persistent verdict/screen cache directory for the LLM lanes "
+        "(makes long holdout evals restartable and repeat runs cheap)",
+    )
     p.add_argument("--cases", default=None, help="comma-separated holdout case ids (default: all)")
     p.add_argument("--trees", default=None, help="comma-separated tree names (default: all)")
     p.add_argument(
@@ -610,6 +630,7 @@ def main(argv: list[str] | None = None) -> int:
         lanes=lanes,
         jury_model=args.jury_model,
         screen_model=args.screen_model,
+        cache_dir=args.cache_dir,
     )
     combined["holdout"] = holdout_report
     print(render_holdout_table(holdout_report))
