@@ -243,21 +243,28 @@ have been observed to yield 80 distinct outputs). What actually makes jury resul
 Pin the model snapshot in `[detangle.jury]` and treat any model migration as a calibration
 event — model aliases drift (a documented case degraded 84% → 51% in three months).
 
-### Measured results (live validation, 2026-08-30)
+### Measured results (live validation, 2026-08-31)
 
 The full cascade was validated end-to-end in this repository with the `claude-cli`
-backend (single `haiku` juror) on the novel-phrasing holdout (`python -m
-benchmarks.run_eval --holdout --lanes nli,jury`):
+backend on the novel-phrasing holdout — 30 conflict + 19 benign trees
+(`python -m benchmarks.run_eval --holdout --lanes ... --jury-model ... --screen-model ...`):
 
-| configuration | holdout recall | holdout FP rate |
-|---|---|---|
-| deterministic only | 5/26 (19.2%) | 0/17 (0.0%) |
-| + NLI auto-clear + jury | **10/26 (38.5%)** | 3/17 (17.6%) |
+| configuration | strict recall | class-lenient | FPs (all advisory-tier) |
+|---|---|---|---|
+| deterministic only | 5/30 (17%) | 5/30 (17%) | 0/19 |
+| + NLI auto-clear (no jury) | 5/30 (17%) | 5/30 (17%) | 0/19 |
+| NLI + jury (`haiku`) | 8/30 (27%) | 10/30 (33%) | 1/19 |
+| NLI + jury (`sonnet`) | 7/30 (23%) | 11/30 (37%) | 2/19 |
+| NLI + screen (`opus`) + jury (`sonnet`) | **17/30 (57%)** | **27/30 (90%)** | 4/19 |
 
-The jury doubled recall. Every measured false positive was a CONDITIONAL_CONFLICT
-verdict — which is why jury conditional-conflict findings are emitted at **advisory**
-severity (never CI-failing), while jury CONTRADICTORY findings are warnings. The verdict
-cache made repeat scans free (3m22s → 8.8s on the seeded fixture) and byte-identical.
+Two structural lessons in that table. First, a pair-level jury plateaus at ~a third of
+conflicts regardless of juror strength — the bottleneck is candidate formation, which is
+what the screen lane fixes (it is also the only configuration that catches the
+procedural/skill-ordering class: 4/4 class-lenient). Second, every measured false
+positive in every configuration was a CONDITIONAL_CONFLICT verdict — which is why jury
+conditional-conflict findings are emitted at **advisory** severity (never CI-failing),
+while jury CONTRADICTORY findings are warnings. The verdict cache made repeat scans free
+(3m22s → 8.8s on the seeded fixture) and byte-identical.
 Verdicts whose ``conflict_type`` is ``numeric`` surface as DTC03; other CONTRADICTORY
 verdicts as DTC01; CONDITIONAL_CONFLICT as DTC02 (or DTP03 when exactly one side is a
 deliberate carve-out — the deterministic router's rule, applied consistently).

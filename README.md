@@ -177,29 +177,35 @@ python -m benchmarks.run_eval
   trees, with equivalent-mutant controls. Current: 108/108 pair-granular detection,
   0/24 control false positives. This measures **self-consistency** — the injections are
   phrased in vocabulary the deterministic lane understands — not generalization.
-- **Holdout (novel phrasings):** hand-authored conflicts in realistic, hedged, colloquial
-  wording written *without* consulting detangle's lexicons, plus benign-but-tricky trees.
-  Measured (2026-08-30, all lanes validated live end-to-end):
+- **Holdout (novel phrasings):** 30 hand-authored conflicts in realistic, hedged,
+  colloquial wording written *without* consulting detangle's lexicons (including 4
+  procedural/skill-ordering cases), plus 19 benign-but-tricky control trees. Strict = an
+  expected-code finding touches every involved file; lenient = right pair, adjacent
+  conflict class. Measured 2026-08-31, all LLM rows live via `claude -p`:
 
-  | configuration | holdout recall | holdout FPs | cost |
+  | configuration | strict recall | class-lenient | holdout FPs |
   |---|---|---|---|
-  | deterministic only (default) | 5/26 (19%) | **0/17 (0%)** | free, offline, ~50ms/tree |
-  | + NLI + jury (single `haiku` juror via `claude -p`) | **10/26 (38%)** | 3/17 (18%)* | ~12 min for all 43 trees |
+  | deterministic only (default) | 5/30 (17%) | 5/30 (17%) | **0/19 (0%)** |
+  | + NLI auto-clear (no jury) | 5/30 (17%) | 5/30 (17%) | 0/19 |
+  | NLI + jury (`haiku`) | 8/30 (27%) | 10/30 (33%) | 1/19* |
+  | NLI + jury (`sonnet`) | 7/30 (23%) | 11/30 (37%) | 2/19* |
+  | NLI + screen (`opus`) + jury (`sonnet`) | **17/30 (57%)** | **27/30 (90%)** | 4/19* |
 
-  \* every measured jury false positive is a CONDITIONAL_CONFLICT — the model's "maybe"
-  bucket — so jury conditional-conflict findings land at **advisory** severity and never
-  fail CI; the deterministic lane's error-severity findings remain FP-free.
+  \* every measured false positive, in every configuration, is a jury
+  CONDITIONAL_CONFLICT — the model's "maybe" bucket — so those findings land at
+  **advisory** severity and never fail CI; the CI-failing severities stayed FP-free
+  across all benign runs.
 
-That split is the honest shape of the multiplex, and it matches the research it was built
+That table is the honest shape of the multiplex, and it matches the research it was built
 from: the deterministic core catches the crisp classes (numerics, duplicates, matched-frame
-contradictions, structural/precedence/budget issues) at zero false-positive cost; the jury
-**doubles recall** on hedged/colloquial phrasings at LLM-typical precision, quarantined below
-the CI-failing line. The residual misses are mostly *candidate formation* (one side of the
-conflict not being recognized as an instruction at all), not adjudication — which is where a
-stronger extraction pass and 3-juror escalation panels (roadmap) aim next.
-Adversarially-verified false-positive shapes from real repos (target-vs-trigger numeric
-bands, do-X-instead refinements, purpose clauses) are encoded as permanent precision gates
-and regression tests.
+contradictions, structural/precedence/budget issues) at zero false-positive cost; a
+pair-level jury alone plateaus at ~a third of conflicts *regardless of juror strength*,
+because the bottleneck is candidate formation, not adjudication; the **screen lane**
+attacks exactly that — a strong model nominating pairs from the whole config — which is
+what breaks the ceiling (and is the only configuration that catches the procedural
+skill-ordering conflicts: 4/4 class-lenient). Adversarially-verified false-positive shapes
+from real repos (target-vs-trigger numeric bands, do-X-instead refinements, purpose
+clauses) are encoded as permanent precision gates and regression tests.
 
 ## Roadmap
 
