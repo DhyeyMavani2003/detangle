@@ -69,8 +69,13 @@ What makes the analysis different from a format linter:
 - **Witness scenarios.** For conditional conflicts, the finding includes the boundary
   condition under which both instructions apply and cannot be jointly satisfied.
 - **Deterministic core.** The default mode uses zero LLM calls, zero network, and is fully
-  reproducible — safe for CI and air-gapped repos. Optional NLI and LLM-jury lanes add
-  semantic depth (see [docs/lanes.md](docs/lanes.md)).
+  reproducible — safe for CI and air-gapped repos. Optional NLI, LLM-screen, and LLM-jury
+  lanes add semantic depth (see [docs/lanes.md](docs/lanes.md)).
+- **Procedural conflicts.** The optional screen lane (`--screen`) has a strong model read the
+  whole config — always-on files *and* the skill bodies that join the context when a skill
+  fires — and nominate order/process conflicts (lint-before-test vs test-before-lint,
+  orchestration order vs a skill's own claims) and cross-layer contradictions for the jury
+  to adjudicate.
 
 ## Install
 
@@ -84,7 +89,7 @@ pip install '.[nli]'       # + local NLI cross-encoder lane
 pip install '.[jury]'      # + the anthropic SDK (only for the API jury backend)
 ```
 
-The LLM jury runs on **whichever backend you have** (`[detangle.jury] backend`, default
+The LLM screen and jury run on **whichever backend you have** (`[detangle.jury] backend`, default
 `auto`): the **Claude Code CLI** (`claude -p` — your existing subscription, zero extra
 config or dependencies), the **Anthropic API** (`detangle[jury]` + `ANTHROPIC_API_KEY`),
 or **any OpenAI-compatible endpoint** — OpenAI, DeepSeek, Gemini's compat layer, or a
@@ -106,6 +111,7 @@ pip install 'detangle[jury]'    # + the anthropic SDK (API jury backend only)
 
 ```bash
 detangle scan                    # scan the current repo, pretty output
+detangle scan --nli --screen     # full cascade: deterministic + NLI + screen + jury
 detangle scan --format sarif -o detangle.sarif   # GitHub code-scanning
 detangle diff --base origin/main # only findings introduced by your changes
 detangle explain DTP02           # what a rule means and how to fix it

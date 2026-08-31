@@ -612,6 +612,101 @@ Inspect the failed deploy, then either fix forward or roll back.
         [".claude/skills/rollback/SKILL.md", ".claude/skills/deploy-doctor/SKILL.md"],
         "two skills both claiming the failed-deploy / rollback intent",
     ),
+    # ---- procedural / skill-orchestration conflicts (the main-file-vs-skill
+    # and step-ordering scenarios) --------------------------------------------
+    _case(
+        "proc-lint-test-order",
+        {
+            "CLAUDE.md": (
+                "# Workflow\n\n"
+                "Run the linter first, then the test suite; commit only after both pass.\n"
+            ),
+            ".claude/skills/pre-commit/SKILL.md": (
+                "---\n"
+                "name: pre-commit\n"
+                "description: Use before committing changes to verify the working tree.\n"
+                "---\n"
+                "# Pre-commit checks\n\n"
+                "Start with the test suite so failures surface early, and save linting "
+                "for the very end once tests are green.\n"
+            ),
+        },
+        ["DTC02", "DTC01", "DTP04"],
+        ["CLAUDE.md", ".claude/skills/pre-commit/SKILL.md"],
+        "Step-ordering conflict: the always-on file prescribes lint-then-test, the "
+        "skill body prescribes test-then-lint - both active when the skill fires.",
+    ),
+    _case(
+        "proc-skill-sequence",
+        {
+            "CLAUDE.md": (
+                "# Skills\n\n"
+                "For release work, invoke the changelog skill first and the "
+                "version-bump skill second - the changelog needs the pre-bump diff.\n"
+            ),
+            ".claude/skills/version-bump/SKILL.md": (
+                "---\n"
+                "name: version-bump\n"
+                "description: Use when cutting a release to update version numbers.\n"
+                "---\n"
+                "# Version bump\n\n"
+                "Bump the version before anything else touches the release - the "
+                "changelog and tags key off the new number, so run this skill ahead "
+                "of the changelog step.\n"
+            ),
+        },
+        ["DTC02", "DTC01", "DTP04"],
+        ["CLAUDE.md", ".claude/skills/version-bump/SKILL.md"],
+        "Skill-invocation order conflict: the orchestrating file says changelog "
+        "before bump; the skill's own body claims it must run first.",
+    ),
+    _case(
+        "proc-main-vs-skill-field",
+        {
+            "CLAUDE.md": (
+                "# Conventions\n\n"
+                'Commit subjects are written in the imperative mood ("Add parser", '
+                'not "Added parser").\n'
+            ),
+            ".claude/skills/release-commit/SKILL.md": (
+                "---\n"
+                "name: release-commit\n"
+                "description: Use when writing the release commit and its message.\n"
+                "---\n"
+                "# Release commits\n\n"
+                'Phrase the subject in past tense ("Added parser support") so the '
+                "changelog reads chronologically.\n"
+            ),
+        },
+        ["DTC01", "DTC02", "DTP04"],
+        ["CLAUDE.md", ".claude/skills/release-commit/SKILL.md"],
+        "The same field (commit subject mood) is prescribed differently by the "
+        "always-on file and a conditionally-loaded skill body.",
+    ),
+    _case(
+        "proc-approval-gate",
+        {
+            "CLAUDE.md": (
+                "# Safety\n\n"
+                "Any command that mutates infrastructure needs a human sign-off "
+                "before it runs. No exceptions during business hours.\n"
+            ),
+            ".claude/skills/auto-remediate/SKILL.md": (
+                "---\n"
+                "name: auto-remediate\n"
+                "description: Use when an alert fires and the runbook has a known fix.\n"
+                "---\n"
+                "# Auto-remediation\n\n"
+                "Apply the runbook fix immediately and page the on-call afterwards - "
+                "waiting on approval defeats the point of automated remediation.\n"
+            ),
+        },
+        ["DTC02", "DTC01", "DTP04", "DTC05"],
+        ["CLAUDE.md", ".claude/skills/auto-remediate/SKILL.md"],
+        "Procedural gate conflict: the always-on file requires human approval "
+        "before mutating actions; the skill instructs acting first and notifying "
+        "after.",
+    ),
 ]
 
 
@@ -857,5 +952,40 @@ webhooks:
 """,
         },
         "prose retry rule alongside the matching numbers inside a code fence",
+    ),
+    _benign(
+        "benign-proc-scoped-order",
+        {
+            "CLAUDE.md": (
+                "# Workflow\n\nFor Python changes, run the type checker before the tests.\n"
+            ),
+            ".claude/skills/frontend-build/SKILL.md": (
+                "---\n"
+                "name: frontend-build\n"
+                "description: Use when building or debugging the frontend bundle.\n"
+                "---\n"
+                "# Frontend builds\n\n"
+                "Run the bundler before the tests - the suite imports built assets.\n"
+            ),
+        },
+        "Different pipelines (Python type-check ordering vs frontend bundle "
+        "ordering) - no shared step, no conflict.",
+    ),
+    _benign(
+        "benign-proc-refinement",
+        {
+            "CLAUDE.md": ("# Releases\n\nCut releases from the main branch after CI is green.\n"),
+            ".claude/skills/hotfix/SKILL.md": (
+                "---\n"
+                "name: hotfix\n"
+                "description: Use for emergency hotfix releases from a release branch.\n"
+                "---\n"
+                "# Hotfixes\n\n"
+                "Hotfixes branch from the latest release tag, not main; CI must still "
+                "be green before tagging.\n"
+            ),
+        },
+        "The skill narrows the release procedure for a distinct emergency case "
+        "and keeps the CI gate - a refinement, not a conflict.",
     ),
 ]

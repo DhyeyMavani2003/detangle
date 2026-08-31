@@ -48,10 +48,15 @@ class ScanResult:
 
 def scan(cfg: Config) -> ScanResult:
     t0 = time.monotonic()
+    if cfg.lane_screen:
+        # the screen only nominates; the jury adjudicates its nominations
+        cfg.lane_jury = True
     corpus = discover(cfg)
     t_discover = time.monotonic()
 
-    units = extract_all_units(corpus)
+    # the screen lane reasons over weak/hedged sentences too (high-recall
+    # extraction); deterministic detectors still only use strict instructions
+    units = extract_all_units(corpus, keep_descriptive=cfg.lane_screen)
     t_extract = time.monotonic()
 
     pairs = generate_pairs(units, cfg)

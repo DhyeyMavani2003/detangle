@@ -70,12 +70,17 @@ def materialize(tree: dict[str, str], root: Path) -> None:
 
 
 def scan_tree(
-    tree: dict[str, str], lanes: tuple[str, ...] = (), jury_max_pairs: int = 6
+    tree: dict[str, str],
+    lanes: tuple[str, ...] = (),
+    jury_max_pairs: int = 6,
+    jury_model: str = "",
+    screen_model: str = "",
 ) -> ScanResult:
     """Materialize into a temp dir and run the pipeline.
 
-    ``lanes`` may include "nli" and/or "jury" to run the hybrid cascade
-    (jury calls are capped per tree by ``jury_max_pairs``).
+    ``lanes`` may include "nli", "jury", and/or "screen" (screen implies
+    jury). Jury calls are capped per tree by ``jury_max_pairs``; model
+    overrides are backend-shaped strings ("sonnet", "opus", ...).
     """
     with tempfile.TemporaryDirectory(prefix="detangle-bench-") as td:
         root = Path(td)
@@ -83,7 +88,12 @@ def scan_tree(
         cfg = Config(root=root)
         cfg.lane_nli = "nli" in lanes
         cfg.lane_jury = "jury" in lanes
+        cfg.lane_screen = "screen" in lanes
         cfg.jury_max_pairs = jury_max_pairs
+        if jury_model:
+            cfg.jury_model = jury_model
+        if screen_model:
+            cfg.screen_model = screen_model
         return scan(cfg)
 
 
@@ -352,12 +362,17 @@ def holdout_detected_lenient(result: ScanResult, case: dict) -> bool:
     )
 
 
-def evaluate_holdout(case_ids: list[str] | None = None, lanes: tuple[str, ...] = ()) -> dict:
+def evaluate_holdout(
+    case_ids: list[str] | None = None,
+    lanes: tuple[str, ...] = (),
+    jury_model: str = "",
+    screen_model: str = "",
+) -> dict:
     """Run the hand-authored holdout set; returns the JSON-serializable report.
 
-    Pass ``lanes=("nli", "jury")`` to measure the hybrid cascade instead of
-    the deterministic lane alone (needs the NLI extra / a jury backend; slow
-    — every not-cleared pair costs two LLM calls).
+    Pass ``lanes=("nli", "jury")`` (or ``("nli", "screen")`` for the full
+    cascade) to measure the hybrid pipelines instead of the deterministic
+    lane alone; model overrides are backend-shaped ("sonnet", "opus", ...).
     """
     t0 = time.perf_counter()
     wanted = set(case_ids) if case_ids else None
@@ -367,7 +382,9 @@ def evaluate_holdout(case_ids: list[str] | None = None, lanes: tuple[str, ...] =
     for case in CONFLICT_CASES:
         if wanted is not None and case["id"] not in wanted:
             continue
-        result = scan_tree(dict(case["tree"]), lanes=lanes)  # type: ignore[arg-type]
+        result = scan_tree(  # type: ignore[arg-type]
+            dict(case["tree"]), lanes=lanes, jury_model=jury_model, screen_model=screen_model
+        )
         hit = holdout_detected(result, case)
         lenient_hit = holdout_detected_lenient(result, case)
         primary = list(case["expected_codes"])[0]
@@ -390,7 +407,9 @@ def evaluate_holdout(case_ids: list[str] | None = None, lanes: tuple[str, ...] =
     for case in BENIGN_CASES:
         if wanted is not None and case["id"] not in wanted:
             continue
-        result = scan_tree(dict(case["tree"]), lanes=lanes)  # type: ignore[arg-type]
+        result = scan_tree(  # type: ignore[arg-type]
+            dict(case["tree"]), lanes=lanes, jury_model=jury_model, screen_model=screen_model
+        )
         fp_codes = sorted({f.code for f in result.findings if f.code in HOLDOUT_FP_CODES})
         benign_results.append(
             {
@@ -553,6 +572,9 @@ def main(argv: list[str] | None = None) -> int:
         help='comma-separated optional lanes for the HOLDOUT scans, e.g. "nli,jury" '
         "(the mutation suite always runs deterministic-only; jury needs a backend)",
     )
+    p.add_argument("--jury-model", default="", help="jury model override (backend-shaped)")
+    p.add_argument("--screen-model", default="", help="screen model override (backend-shaped)")
+    p.add_argument("--cases", default=None, help="comma-separated holdout case ids (default: all)")
     p.add_argument("--trees", default=None, help="comma-separated tree names (default: all)")
     p.add_argument(
         "--operators", default=None, help="comma-separated operator/control names (default: all)"
@@ -582,7 +604,13 @@ def main(argv: list[str] | None = None) -> int:
         print(render_table(mutation_report))
         print()
     lanes = tuple(x.strip() for x in args.lanes.split(",") if x.strip())
-    holdout_report = evaluate_holdout(lanes=lanes)
+    case_ids = [x.strip() for x in args.cases.split(",")] if args.cases else None
+    holdout_report = evaluate_holdout(
+        case_ids=case_ids,
+        lanes=lanes,
+        jury_model=args.jury_model,
+        screen_model=args.screen_model,
+    )
     combined["holdout"] = holdout_report
     print(render_holdout_table(holdout_report))
     if args.json:

@@ -1,15 +1,17 @@
 # Analysis lanes
 
-detangle runs up to three analysis lanes. The design follows the contradiction-detection
+detangle runs up to four analysis lanes. The design follows the contradiction-detection
 literature's cascade result: deterministic rules for what rules do best (negation, antonymy,
-numbers, scopes), an NLI cross-encoder as a *recall filter*, and an LLM judge as the only tier
-allowed to issue semantic verdicts. Each lane is honest about what it can and cannot do.
+numbers, scopes), an NLI cross-encoder as a *recall filter*, a strong-model **screen** as a
+whole-config *nominator*, and an LLM jury as the only tier allowed to issue semantic
+verdicts. Each lane is honest about what it can and cannot do.
 
 | Lane | Enabled | Cost | Network | Role |
 |---|---|---|---|---|
 | **Deterministic** | always | free | none | The verdict-giver for everything it can decide |
 | **NLI** | opt-in (`--nli` / `lanes.nli = true`) | local CPU/GPU inference | model download on first run | Recall filter and confidence signal — never a verdict-giver |
-| **Jury** | opt-in (`--jury` / `lanes.jury = true`) | Anthropic API calls | yes | Schema-constrained adjudication of pre-extracted candidate pairs |
+| **Screen** | opt-in (`--screen` / `lanes.screen = true`; implies jury) | one strong-model call per ~150 units | yes | Whole-config sweep that *nominates* suspicious pairs for the jury — never a verdict-giver |
+| **Jury** | opt-in (`--jury` / `lanes.jury = true`) | LLM API calls | yes | Schema-constrained adjudication of pre-extracted candidate pairs |
 
 A planned fourth lane — the **formal lane** (clingo/ASP + Z3 for the formalizable subset, with
 unsat-core witnesses) — is what the reserved codes DTC06 and DTC07 are waiting for. It does not
@@ -207,7 +209,10 @@ sole source of an `error`.
 
 ### Candidate selection
 
-- If the NLI lane ran: the not-cleared band, best-scored first (auto-cleared pairs are never adjudicated).
+- Screen-lane nominations come **first** when `--screen` is on (a strong model chose them by
+  reading the whole config, including pairs blocking could never form).
+- Then, if the NLI lane ran: the not-cleared band, best-scored first (auto-cleared pairs are
+  never adjudicated).
 - Otherwise: unclaimed pairs ranked by lexical similarity, highest first.
 - Hard cap: `jury_max_pairs` (default **200** pairs) — the budget valve.
 
@@ -278,10 +283,61 @@ env:
 
 ---
 
+## Lane 4: screen (optional) — nomination, not verdicts
+
+```bash
+detangle scan --screen           # implies --jury; or --nli --screen for the full cascade
+```
+
+The deterministic lane's recall ceiling is **candidate formation**: a conflict whose phrasing
+defeats the lexicons never becomes a candidate pair, so no downstream judge ever sees it. The
+screen lane attacks exactly that. A strong model reads **every** extracted unit — including
+the weak, hedged sentences the precision-first classifier normally rejects (high-recall
+extraction is switched on automatically with `--screen`; the deterministic detectors ignore
+those weak units) — together with file, layer (always-on memory vs conditionally loaded
+skill/rule body), and activation metadata, and nominates suspicious pairs across the classes
+only whole-config reasoning can see:
+
+- **procedural/order conflicts** — step A-before-B vs B-before-A, and skill-orchestration
+  order: an always-on file prescribing a skill-invocation sequence that a skill's own body
+  contradicts;
+- **cross-layer conflicts** — the always-on CLAUDE.md/AGENTS.md vs the conditionally-loaded
+  skill bodies that join the context when a skill fires (the prompt tells the screen
+  explicitly that a skill's body activates *together with* the main files);
+- hedged/colloquial contradictions, numeric and format clashes phrased outside the
+  deterministic vocabulary, and semantic redundancy.
+
+**Nominations are not findings.** Every nominated pair goes through the jury's full
+swap-validated adjudication protocol (both orderings, evidence validation, verdict enums) —
+the screen buys recall, the jury keeps precision. This is the research's group-screen →
+pair-judge cascade: open-ended whole-document *verdicts* collapse (8% recall, 53.8%
+accuracy), but whole-document *nomination* feeding a pair-level judge is the configuration
+that works.
+
+**Cost & chunking.** One screen call covers up to 150 units; larger configs are chunked with
+every always-on unit repeated in every chunk (so main-file-vs-skill pairs survive chunking).
+Screen calls are cached by (backend, model, prompt hash, unit-set hash) — re-screening an
+unchanged config is free. Use a strong model here: the screen is one call doing whole-config
+reasoning, so this is where model quality pays. Defaults per backend: `claude-cli` → `opus`,
+`anthropic` → `claude-opus-5`, `openai` → `gpt-5`; override with `[detangle.screen] model`.
+The jury that adjudicates the nominations can stay on a cheaper model — a
+screen-with-frontier-model + jury-with-mid-tier split is the intended shape.
+
+**Failure behavior.** No available backend skips the lane with a note (the scan completes on
+whatever lanes remain); a failed screen call marks the sweep incomplete but keeps the scan
+alive. Nominations that target the same span, are mutually exclusive by activation, or are
+already claimed by a deterministic detector are dropped before adjudication.
+
+Findings that originate from a screen nomination carry `lanes: ["jury", "screen"]` — the
+verdict is always the jury's.
+
+---
+
 ## Which lane decided what?
 
 Every finding carries a `lanes` array: `["deterministic"]`, `["deterministic", "nli"]` (two
-lanes agree), `["nli"]` (a lead), or `["jury"]` (an adjudicated verdict), plus a `confidence`
+lanes agree), `["nli"]` (a lead), `["jury"]` (an adjudicated verdict), or
+`["jury", "screen"]` (a screen nomination the jury upheld), plus a `confidence`
 in [0, 1] — deterministic findings are 1.0, lane findings carry the lane's own confidence. CI
 policy can key off severity alone (the default), since lane-sourced findings already encode
 their reliability in the severity they are allowed to use.

@@ -40,12 +40,12 @@ def discover(cfg: Config) -> Corpus:
     return corpus
 
 
-def extract_all_units(corpus: Corpus) -> list[InstructionUnit]:
+def extract_all_units(corpus: Corpus, keep_descriptive: bool = False) -> list[InstructionUnit]:
     """Extract instruction units from every discovered config file."""
     units: list[InstructionUnit] = []
     for cf in corpus.files:
         start = int(cf.meta.get("body_start", 1))
-        units.extend(extract_units(cf, body_start_line=start))
+        units.extend(extract_units(cf, body_start_line=start, keep_descriptive=keep_descriptive))
     return units
 
 

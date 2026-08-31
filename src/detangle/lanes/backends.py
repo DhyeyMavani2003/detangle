@@ -188,24 +188,44 @@ class OpenAICompatBackend(Backend):
             raise JuryError(f"unexpected response shape: {str(payload)[:300]}") from e
 
 
-# model aliases that make sense per backend when the user did not choose one
+# model aliases that make sense per backend when the user did not choose one.
+# The screen role defaults to the STRONGEST tier: whole-config reasoning is
+# exactly where model quality buys recall.
 _DEFAULT_MODELS = {
-    "anthropic": "claude-haiku-4-5-20251001",
-    "claude-cli": "haiku",
-    "openai": "gpt-5-mini",
+    "jury": {
+        "anthropic": "claude-haiku-4-5-20251001",
+        "claude-cli": "haiku",
+        "openai": "gpt-5-mini",
+    },
+    "screen": {
+        "anthropic": "claude-opus-5",
+        "claude-cli": "opus",
+        "openai": "gpt-5",
+    },
 }
 
 
-def make_backend(cfg: Config) -> Backend:
-    """Resolve the configured (or auto-detected) jury backend."""
+def make_backend(cfg: Config, role: str = "jury") -> Backend:
+    """Resolve the configured (or auto-detected) backend for a lane role.
+
+    ``role`` is "jury" (pair adjudication; cfg.jury_model) or "screen"
+    (whole-config sweep; cfg.screen_model, defaulting to the strongest tier).
+    Both roles share the same transport choice (cfg.jury_backend).
+    """
     choice = cfg.jury_backend
-    model = cfg.jury_model
+    if role == "screen":
+        model = cfg.screen_model
+    else:
+        model = cfg.jury_model
 
     def pick_model(backend_name: str) -> str:
-        # the stored default is anthropic-shaped; translate for other backends
+        # the stored jury default is anthropic-shaped; translate per backend,
+        # and let each role fall back to its own tier
+        if role == "screen":
+            return model or _DEFAULT_MODELS["screen"][backend_name]
         if model and model != Config.jury_model:
             return model
-        return _DEFAULT_MODELS[backend_name]
+        return _DEFAULT_MODELS["jury"][backend_name]
 
     if choice == "anthropic":
         return AnthropicBackend(pick_model("anthropic"))

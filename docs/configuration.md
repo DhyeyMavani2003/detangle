@@ -41,6 +41,7 @@ respect_gitignore = true
 [detangle.lanes]
 nli = false
 jury = false
+screen = false       # whole-config LLM nomination sweep; implies jury
 
 [detangle.rules]
 DTR04 = false        # disable a rule entirely
@@ -53,6 +54,9 @@ model = "claude-haiku-4-5-20251001"
 max_pairs = 200
 # base_url = "http://localhost:11434/v1"   # openai backend only
 # api_key_env = "OPENAI_API_KEY"           # openai backend only
+
+[detangle.screen]
+model = "opus"          # screen-lane model; use the strongest you have
 ```
 
 ## Keys
@@ -114,15 +118,16 @@ The walker additionally always skips a built-in list of vendored/derived directo
 (`.git`, `node_modules`, `.venv`, `dist`, `build`, caches, …) and applies `ignore`
 globs. Set to `false` to scan gitignored files too.
 
-### `[detangle.lanes]` — table, default both `false`
+### `[detangle.lanes]` — table, default all `false`
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `nli` | bool | `false` | Enable the local NLI cross-encoder lane (needs `detangle[nli]`) |
 | `jury` | bool | `false` | Enable the LLM jury lane (needs any backend: the `claude` CLI, `ANTHROPIC_API_KEY`, or an OpenAI-compatible `base_url` — see [lanes.md](lanes.md)) |
+| `screen` | bool | `false` | Enable the whole-config screen sweep. **Implies `jury`** (the screen only nominates; the jury adjudicates its nominations). Also switches extraction to high-recall mode for the screen's benefit. |
 
-See [lanes.md](lanes.md). The `--nli` / `--jury` flags turn a lane **on** for one run; they
-cannot turn off a lane enabled in the file. Must be a table, else a config error.
+See [lanes.md](lanes.md). The `--nli` / `--jury` / `--screen` flags turn a lane **on** for one
+run; they cannot turn off a lane enabled in the file. Must be a table, else a config error.
 
 ### `[detangle.rules]` — table, default empty
 
@@ -151,6 +156,15 @@ routed through this filter.
 | `backend` | string | `"auto"` | `auto` / `claude-cli` / `anthropic` / `openai`. `auto` picks the first available (key → anthropic, `claude` CLI → claude-cli, `base_url` → openai). |
 | `base_url` | string | `""` | OpenAI-compatible endpoint root for the `openai` backend (e.g. `http://localhost:11434/v1` for Ollama). |
 | `api_key_env` | string | `"OPENAI_API_KEY"` | Name of the env var holding the key for the `openai` backend; unset env sends no auth header (local servers). |
+
+### `[detangle.screen]` — table
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `model` | string | backend-tiered | Screen-lane model, backend-shaped like the jury's. Left unset, each backend picks its **strong** tier: `opus` (claude-cli), `claude-opus-5` (anthropic), `gpt-5` (openai). The screen is one whole-config call — this is where model quality pays, while the jury can stay on a cheaper model. |
+
+The screen shares the jury's `backend` / `base_url` / `api_key_env` transport settings from
+`[detangle.jury]` — only the model tier differs by role.
 
 
 ### `[detangle.nli]` — table
@@ -235,6 +249,7 @@ Full scan of `path` (default: `.`).
 | `--fail-on {info,advisory,warning,error}` | Override the config's `fail_on` for this run |
 | `--nli` | Enable the NLI lane for this run |
 | `--jury` | Enable the jury lane for this run |
+| `--screen` | Enable the screen lane for this run (implies `--jury`) |
 | `--no-soft` | Hide advisory/info findings (sets `include_soft = false`) |
 | `--select CODES` | Comma-separated rule codes to run **exclusively** (e.g. `DTC01,DTC03`). Unknown codes exit 2. Replaces any `[detangle.rules]` disables for the run. |
 | `-v`, `--verbose` | More detail in console output |

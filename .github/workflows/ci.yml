@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: Lint (ruff)
@@ -48,6 +52,11 @@ jobs:
       - run: pip install -e .
       - name: detangle scan
         run: detangle scan . -v
+      - name: Findings summary
+        if: always()
+        run: |
+          echo "## Dogfood self-scan" >> "$GITHUB_STEP_SUMMARY"
+          detangle scan . --format markdown >> "$GITHUB_STEP_SUMMARY" || true
       - name: SARIF report
         if: always()
         run: detangle scan . --format sarif --output detangle.sarif || true
@@ -68,6 +77,22 @@ jobs:
       - run: pip install -e .
       - name: Run benchmark
         run: python -m benchmarks.run_eval --json bench-results.json
+      - name: Benchmark summary
+        if: always()
+        run: |
+          python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          r = json.load(open("bench-results.json"))
+          m, h = r["mutation_suite"]["totals"], r["holdout"]["totals"]
+          print("## Benchmark (deterministic lane)")
+          print()
+          print("| suite | detected | false positives |")
+          print("|---|---|---|")
+          print(f"| mutation (in-distribution) | {m['detected']}/{m['operator_runs']} | {m['control_false_positives']}/{m['control_runs']} |")
+          print(f"| holdout (novel phrasings) | {h['detected']}/{h['conflict_cases']} ({h['recall']:.0%}) | {h['false_positives']}/{h['benign_cases']} |")
+          print()
+          print("Holdout recall for the LLM lanes is measured via the manual `hybrid-eval` workflow.")
+          EOF
       - uses: actions/upload-artifact@v4
         with:
           name: benchmark-results

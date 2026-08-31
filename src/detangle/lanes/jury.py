@@ -35,7 +35,8 @@ from ..findings import Finding, pair_evidence
 from ..ir import UnitPair
 from ..similarity import text_similarity
 from ..taxonomy import Severity
-from .backends import Backend, JuryError, make_backend
+from . import backends
+from .backends import Backend, JuryError
 from .cachekey import make_cache
 
 VERDICTS = (
@@ -230,29 +231,53 @@ def _verdict_to_code(verdict: str, conflict_type: str) -> str | None:
 
 def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) -> list[Finding]:
     try:
-        juror = Juror(make_backend(cfg))
+        juror = Juror(backends.make_backend(cfg))
     except JuryError as e:
         ctx.corpus.notes.append(f"{e} — lane skipped")
         return findings
 
     cache = make_cache(cfg)
 
-    # candidates: NLI bands if the NLI lane ran, else similarity-ranked
-    # unclaimed pairs (highest lexical similarity first)
-    banded: list[UnitPair] = []
+    # screen-lane nominations come FIRST: a strong model chose them by
+    # reading the whole config, including pairs blocking could never form
+    screened: list[UnitPair] = []
+    screened_keys: set[str] = set()
+    if cfg.lane_screen:
+        from .screen import run_screen_lane
+
+        try:
+            screen_backend = backends.make_backend(cfg, role="screen")
+        except JuryError as e:
+            ctx.corpus.notes.append(f"screen lane unavailable ({e}); skipped")
+        else:
+            screened = run_screen_lane(cfg, ctx, screen_backend)
+            screened_keys = {p.key for p in screened}
+
+    # then: NLI bands if the NLI lane ran, else similarity-ranked unclaimed
+    # candidate pairs (highest lexical similarity first)
     nli_not_cleared = getattr(ctx, "nli_not_cleared", None)
     if nli_not_cleared is not None:
-        banded = [p for p, _ in nli_not_cleared]
+        rest = [p for p, _ in nli_not_cleared]
     else:
-        banded = sorted(
-            (p for p in ctx.pairs if not ctx.is_claimed(p)),
+        rest = sorted(
+            (
+                p
+                for p in ctx.pairs
+                if not ctx.is_claimed(p) and p.a.is_instruction and p.b.is_instruction
+            ),
             key=lambda p: -p.similarity,
         )
+    banded = screened + [p for p in rest if p.key not in screened_keys]
     banded = banded[: cfg.jury_max_pairs]
 
     calls = 0
     transient_failures = 0
     for pair in banded:
+        pair_lanes = (
+            ("jury", "screen")
+            if any(k.startswith("screen:") for k in pair.block_keys)
+            else ("jury",)
+        )
         result = adjudicate(juror, pair, cache)
         calls += 1
         if result.get("transient"):
@@ -278,7 +303,7 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
                     co_activation=pair.co_activation_account,
                     precedence=pair.precedence.account,
                     confidence=0.3,
-                    lanes=("jury",),
+                    lanes=pair_lanes,
                     tags=("needs-human",),
                 )
             )
@@ -324,7 +349,7 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
                 suggestion=str(result.get("resolution_hint", "") or ""),
                 witness=str(result.get("overlap_condition", "") or ""),
                 confidence=float(result.get("confidence", 0.6)),
-                lanes=("jury",),
+                lanes=pair_lanes,
             )
         )
     cache.save()

@@ -49,6 +49,11 @@ def _build_parser() -> argparse.ArgumentParser:
         )
         sp.add_argument("--nli", action="store_true", help="enable the NLI lane")
         sp.add_argument("--jury", action="store_true", help="enable the LLM jury lane")
+        sp.add_argument(
+            "--screen",
+            action="store_true",
+            help="enable the whole-config LLM screen sweep (implies --jury; strongest model)",
+        )
         sp.add_argument("--no-soft", action="store_true", help="hide advisory/info findings")
         sp.add_argument("-v", "--verbose", action="store_true")
         sp.add_argument(
@@ -92,6 +97,8 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
         cfg.lane_nli = True
     if args.jury:
         cfg.lane_jury = True
+    if args.screen:
+        cfg.lane_screen = True
     if args.no_soft:
         cfg.include_soft = False
     if args.fail_on:

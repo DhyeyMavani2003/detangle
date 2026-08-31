@@ -477,20 +477,31 @@ def extract_defined_terms(text: str) -> tuple[str, ...]:
 # ---------------------------------------------------------------------------
 
 
-def extract_units(file: ConfigFile, body_start_line: int = 1) -> list[InstructionUnit]:
-    """Extract instruction units from a parsed config file's text."""
+def extract_units(
+    file: ConfigFile, body_start_line: int = 1, keep_descriptive: bool = False
+) -> list[InstructionUnit]:
+    """Extract instruction units from a parsed config file's text.
+
+    With ``keep_descriptive`` (the LLM lanes' high-recall mode), sentences the
+    precision-first classifier rejects are kept as WEAK units
+    (``is_instruction=False``): the deterministic detectors never touch them,
+    but the screen/jury lanes can reason over hedged or colloquial policy
+    ("we'd rather you didn't...") the lexicons cannot commit to.
+    """
     blocks = parse_blocks(file.text, start_line=body_start_line)
     units: list[InstructionUnit] = []
     for sent in iter_sentences(blocks):
-        units.extend(_sentence_to_units(sent, file))
+        units.extend(_sentence_to_units(sent, file, keep_descriptive))
     return units
 
 
-def _sentence_to_units(sent: Sentence, file: ConfigFile) -> list[InstructionUnit]:
+def _sentence_to_units(
+    sent: Sentence, file: ConfigFile, keep_descriptive: bool = False
+) -> list[InstructionUnit]:
     text = sent.text.strip()
     is_instr = looks_like_instruction(text, sent.from_bullet)
     defined = extract_defined_terms(text)
-    if not is_instr and not defined:
+    if not is_instr and not defined and not (keep_descriptive and len(text.split()) >= 4):
         return []
     body, cond = split_condition(text)
     hit = detect_modality(text)

@@ -28,6 +28,8 @@ class Config:
     # Lanes: deterministic is always on; nli/jury are opt-in.
     lane_nli: bool = False
     lane_jury: bool = False
+    lane_screen: bool = False  # whole-config LLM sweep; implies the jury
+    screen_model: str = ""  # backend-shaped; empty = backend's strong default
     include_soft: bool = True  # report advisory-tier findings
     fail_on: Severity = Severity.ERROR  # exit non-zero at or above this severity
     conflict_budget: int | None = None  # allowed open findings before failure (ratchet)
@@ -112,6 +114,7 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
         raise bad("'lanes' must be a table")
     cfg.lane_nli = bool(lanes.get("nli", cfg.lane_nli))
     cfg.lane_jury = bool(lanes.get("jury", cfg.lane_jury))
+    cfg.lane_screen = bool(lanes.get("screen", cfg.lane_screen))
 
     if "fail_on" in tbl:
         name = str(tbl["fail_on"]).lower()
@@ -166,6 +169,10 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
         cfg.jury_backend = backend
         cfg.jury_base_url = str(jury.get("base_url", cfg.jury_base_url))
         cfg.jury_api_key_env = str(jury.get("api_key_env", cfg.jury_api_key_env))
+
+    screen = tbl.get("screen", {})
+    if isinstance(screen, dict):
+        cfg.screen_model = str(screen.get("model", cfg.screen_model))
 
     nli = tbl.get("nli", {})
     if isinstance(nli, dict):

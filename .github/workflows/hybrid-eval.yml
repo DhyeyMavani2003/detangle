@@ -1,0 +1,68 @@
+name: Hybrid eval (LLM lanes)
+
+# Manual holdout evaluation with the LLM lanes enabled. The default CI never
+# spends LLM tokens; this workflow is dispatched on demand and needs the
+# ANTHROPIC_API_KEY repository secret (the `anthropic` backend). Without the
+# secret, the LLM lanes skip gracefully and the run reports deterministic-only
+# numbers.
+
+on:
+  workflow_dispatch:
+    inputs:
+      lanes:
+        description: "Comma-separated lanes (any of: nli,jury,screen)"
+        default: "jury"
+        type: string
+      jury_model:
+        description: "Jury model (empty = backend default, haiku tier)"
+        default: ""
+        type: string
+      screen_model:
+        description: "Screen model (empty = backend default, opus tier)"
+        default: ""
+        type: string
+      cases:
+        description: "Comma-separated holdout case ids (empty = all)"
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  holdout:
+    name: Holdout with lanes ${{ inputs.lanes }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (deterministic + jury)
+        run: pip install -e ".[jury]"
+      - name: Install NLI extra
+        if: contains(inputs.lanes, 'nli')
+        run: pip install -e ".[nli]"
+      - name: Run holdout
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python -m benchmarks.run_eval --holdout \
+            --lanes "${{ inputs.lanes }}" \
+            --jury-model "${{ inputs.jury_model }}" \
+            --screen-model "${{ inputs.screen_model }}" \
+            ${{ inputs.cases != '' && format('--cases "{0}"', inputs.cases) || '' }} \
+            --json holdout-results.json | tee holdout.txt
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Holdout — lanes: ${{ inputs.lanes }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat holdout.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: holdout-results
+          path: holdout-results.json
