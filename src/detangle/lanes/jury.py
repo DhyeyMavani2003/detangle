@@ -281,6 +281,10 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
         )
         result = adjudicate(juror, pair, cache)
         calls += 1
+        if calls % 10 == 0:
+            # incremental persistence: a deep run adjudicates hundreds of
+            # pairs over hours — a crash must not lose the verdicts so far
+            cache.save()
         if result.get("transient"):
             transient_failures += 1
             if transient_failures >= 3:
