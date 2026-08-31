@@ -1,0 +1,11 @@
+# detangle config for the demo agent — the nightly deep scan reads this.
+# The PR-time CI gate runs deterministic-only (no backend in CI), so the
+# lane/model choices here only take effect where a backend is available.
+[detangle]
+fail_on = "error"
+
+[detangle.jury]
+model = "sonnet"        # claude-cli alias; nightly runs ride the CLI backend
+
+[detangle.screen]
+model = "opus"

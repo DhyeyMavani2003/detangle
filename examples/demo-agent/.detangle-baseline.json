@@ -1,0 +1,258 @@
+{
+  "version": 1,
+  "tool": "detangle",
+  "entries": [
+    {
+      "fingerprint": "DTC03:141bb467cb82",
+      "pair_key": "437fc19c8f40+602b556f1dda",
+      "code": "DTC03",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Numeric constraints disagree: '400 lines' and '800 lines' cannot both hold (ranges do not intersect).",
+      "severity": "error",
+      "files": [
+        ".claude/skills/code-review/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Keep pull requests small — aim for under 200 changed lines; the hard cap is 400 lines of diff per PR.",
+        "Treat 800 lines as the outer bound for a single review pass; if a diff runs past that, ask the author to split it before you review."
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC03:2fb517d20daf",
+      "pair_key": "020b40d77d37+a253500619d4",
+      "code": "DTC03",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Numeric constraints disagree: '30 seconds' and 'at least 120 seconds' cannot both hold (ranges do not intersect).",
+      "severity": "error",
+      "files": [
+        ".claude/rules/backend.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Keep the vitest per-test timeout at 30 seconds; a unit test that needs longer is doing too much.",
+        "Set the vitest timeout to at least 120 seconds for the integration suites; they talk to a real Postgres container and legitimately take up to two minutes."
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC04:3613f0cd6501",
+      "pair_key": "081139a86feb+222c05024075",
+      "code": "DTC04",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Exclusive output-format constraints collide: one requires 'bullet points'-only output, the other 'prose' (list vs prose).",
+      "severity": "error",
+      "files": [
+        ".claude/skills/code-review/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Always write PR descriptions as bullet points only — one bullet per meaningful change, with a link to the Linear issue in the first bullet.",
+        "The summary at the top of the PR description must be formatted strictly as prose — reviewers need the narrative in one place before scanning the diff."
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP04:6346195f13b1",
+      "pair_key": "9f512a5e2c04+d714e2a45346",
+      "code": "DTP04",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Cross-layer collision (memory vs skill): one side forbids 'force-push', the other requires it.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never force-push.",
+        "Force-push the branch after each rebase; a force-push is required here because the rebase rewrites every commit on the branch."
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP04:b5c11424cd60",
+      "pair_key": "3656001623ad+96bf680d587c",
+      "code": "DTP04",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Cross-layer collision (memory vs skill): one side permits 'edit files under src/generated/', the other forbids it.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never edit files under src/generated/ — the Prisma client and the OpenAPI types there are rebuilt on every build, and hand edits are silently lost.",
+        "If the regenerated client drifts from what the API build expects, it's fine to edit files under src/generated/ to patch the enum casing by hand; call the hand edit out in the PR so the generator bug g"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP05:4bc97ea558e6",
+      "pair_key": "4866c0edc4ff9cba",
+      "code": "DTP05",
+      "status": "accepted",
+      "note": "fixture intentionally diverges CLAUDE.md/AGENTS.md; documented in EXPECTED.md",
+      "message": "CLAUDE.md and AGENTS.md differ materially (similarity 32%), so different tools see different instruction sets: only claude-code read(s) CLAUDE.md; only amp, codex, cursor, jules, opencode, zed read(s) AGENTS.md.",
+      "severity": "advisory",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "CLAUDE.md",
+        "AGENTS.md"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP05:eb3c60308d90",
+      "pair_key": "e3b0c44298fc1c14",
+      "code": "DTP05",
+      "status": "accepted",
+      "note": "Zed first-match note is expected for this fixture",
+      "message": "Zed reads only AGENTS.md (first match in its search order); ignored by Zed: CLAUDE.md.",
+      "severity": "advisory",
+      "files": [],
+      "quotes": [],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP06:b8f38cc03cc8",
+      "pair_key": "ea8a71ddc387530b",
+      "code": "DTP06",
+      "status": "accepted",
+      "note": "fixture ships config only; rule scopes match no source tree by design",
+      "message": "Dead scope: activation globs (apps/web/**, shared/**) match no file in the repository — these instructions can never trigger.",
+      "severity": "warning",
+      "files": [
+        ".claude/rules/frontend.md"
+      ],
+      "quotes": [
+        ".claude/rules/frontend.md"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP06:de885ab5d260",
+      "pair_key": "4cbee81c97012830",
+      "code": "DTP06",
+      "status": "accepted",
+      "note": "fixture ships config only; rule scopes match no source tree by design",
+      "message": "Dead scope: activation globs (services/api/**, shared/**) match no file in the repository — these instructions can never trigger.",
+      "severity": "warning",
+      "files": [
+        ".claude/rules/backend.md"
+      ],
+      "quotes": [
+        ".claude/rules/backend.md"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:ab520003e5e3",
+      "pair_key": "566eb0dc7e62+ab9ed56e16ff",
+      "code": "DTR01",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Duplicate instruction across files: the same prescription is stated twice — harmless today, but the copies can silently diverge on the next edit.",
+      "severity": "advisory",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never commit secrets, credentials, or .env files to the repository; load secrets from the Doppler secret manager and reference them by name.",
+        "Never commit secrets, credentials, or .env files to this repository; load secrets from the Doppler secret manager and reference them by name."
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR02:347d9e82cb01",
+      "pair_key": "01523b47c3fc+70eea8c4575c",
+      "code": "DTR02",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Near-duplicate drift: these read as two versions of the same instruction that have started to diverge — a merge conflict in slow motion.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run pnpm test before opening a pull request and make sure the suite passes clean.",
+        "Run pnpm run test:unit --coverage before opening a pull request and make sure the suite passes clean."
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR05:8d3f32782000",
+      "pair_key": "286fc95b443a",
+      "code": "DTR05",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "References 'scripts/verify-all.sh', which does not exist in the repository.",
+      "severity": "warning",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run scripts/verify-all.sh before you push; it chains lint, typecheck, and the unit suite in the exact order CI uses."
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR05:91ce997147ff",
+      "pair_key": "bd2936345173",
+      "code": "DTR05",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "References 'docs/testing.md', which does not exist in the repository.",
+      "severity": "warning",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "See docs/testing.md for the flake quarantine process and for what counts as an integration test."
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTS01:dd34c9dd10be",
+      "pair_key": "559d9fd7b35248b2",
+      "code": "DTS01",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Trigger overlap between 'hotfix' and 'release' (72% description overlap): the model routes on these descriptions and no ecosystem documents arbitration — which one fires is nondeterministic.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        ".claude/skills/release/SKILL.md"
+      ],
+      "quotes": [
+        "Use when shipping a new version of Orbit to production urgently — cut the fix, tag it, publish the packages, and roll the deploy out ahead of the release train.",
+        "Use when shipping a new version of Orbit to production — cut the version, tag it, publish the packages, and roll the deploy out."
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    }
+  ]
+}

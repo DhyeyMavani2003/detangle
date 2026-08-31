@@ -47,6 +47,13 @@ def render_console(result: ScanResult, verbose: bool = False) -> None:
         title.append(f"{f.code} ", style=f"bold {color}")
         title.append(f.name, style="bold")
         title.append(f"  [{label}]", style=color)
+        bl_tag = result.baseline_tags.get(f.fingerprint)
+        if bl_tag == "new":
+            title.append("  NEW", style="bold magenta")
+        elif bl_tag == "regression":
+            title.append("  REGRESSION", style="bold red")
+        elif bl_tag == "known":
+            title.append("  known", style="dim")
 
         body = Text()
         body.append(f.message + "\n", style="bold")
@@ -95,6 +102,14 @@ def render_console(result: ScanResult, verbose: bool = False) -> None:
         console.print(
             "  " + " · ".join(f"{v} {k}" for k, v in sorted(by_sev.items(), reverse=True))
         )
+    if result.baseline_stats:
+        b = result.baseline_stats
+        console.print(
+            f"\n[bold]baseline:[/bold] {b.get('new', 0)} new · "
+            f"{b.get('regression', 0)} regression · {b.get('known', 0)} known · "
+            f"{b.get('accepted_suppressed', 0)} suppressed by human verdict · "
+            f"{b.get('missing', 0)} no longer occurring"
+        )
 
 
 def _ellipsize(text: str, n: int) -> str:
@@ -135,11 +150,18 @@ def finding_to_dict(f: Finding) -> dict[str, Any]:
 
 
 def render_json(result: ScanResult) -> str:
+    def with_baseline(f: Finding) -> dict[str, Any]:
+        d = finding_to_dict(f)
+        tag = result.baseline_tags.get(f.fingerprint)
+        if tag:
+            d["baseline"] = tag
+        return d
+
     doc = {
         "tool": "detangle",
         "version": __version__,
         "stats": result.stats,
-        "findings": [finding_to_dict(f) for f in result.findings],
+        "findings": [with_baseline(f) for f in result.findings],
         "suppressed": [
             {
                 "fingerprint": f.fingerprint,
@@ -151,6 +173,8 @@ def render_json(result: ScanResult) -> str:
         ],
         "warnings": result.warnings,
     }
+    if result.baseline_stats:
+        doc["baseline"] = result.baseline_stats
     return json.dumps(doc, indent=2)
 
 
@@ -260,8 +284,20 @@ def render_markdown(result: ScanResult) -> str:
     lines.append("")
     if not result.findings:
         lines.append("✅ No findings.")
+    if result.baseline_stats:
+        b = result.baseline_stats
+        lines.append(
+            f"Baseline: **{b.get('new', 0)} new** · {b.get('regression', 0)} regression · "
+            f"{b.get('known', 0)} known · {b.get('accepted_suppressed', 0)} suppressed by "
+            f"human verdict · {b.get('missing', 0)} no longer occurring."
+        )
+        lines.append("")
     for f in result.findings:
-        lines.append(f"## {f.code} {f.name} — {f.severity.label}")
+        bl_tag = result.baseline_tags.get(f.fingerprint)
+        marker = {"new": " · **NEW**", "regression": " · **REGRESSION**", "known": " · known"}.get(
+            bl_tag or "", ""
+        )
+        lines.append(f"## {f.code} {f.name} — {f.severity.label}{marker}")
         lines.append("")
         lines.append(f.message)
         lines.append("")

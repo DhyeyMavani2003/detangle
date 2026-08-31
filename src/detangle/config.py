@@ -47,6 +47,16 @@ class Config:
     cache_dir: Path | None = None
     ignore_globs: tuple[str, ...] = ()  # config files to skip entirely
     respect_gitignore: bool = True
+    # Deep pass: thoroughness-first profile — every available lane on,
+    # per-class screen sweeps, jury cap lifted. Hours are acceptable.
+    deep: bool = False
+    # Triage baseline: a checked-in JSON artifact carrying human verdicts
+    # across runs (new/open/accepted/resolved), used to pre-fill triage and
+    # focus reports on what's new. None = no baseline.
+    baseline_path: Path | None = None
+    update_baseline: bool = False  # write the merged baseline back after the scan
+    only_new: bool = False  # report only new/regression findings
+    fail_on_new: bool = False  # exit non-zero only for new/regression findings
 
     def severity_for(self, code: str) -> Severity:
         if code in self.severity_overrides:
@@ -115,6 +125,17 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
     cfg.lane_nli = bool(lanes.get("nli", cfg.lane_nli))
     cfg.lane_jury = bool(lanes.get("jury", cfg.lane_jury))
     cfg.lane_screen = bool(lanes.get("screen", cfg.lane_screen))
+
+    if "deep" in tbl:
+        cfg.deep = bool(tbl["deep"])
+
+    baseline = tbl.get("baseline", {})
+    if not isinstance(baseline, dict):
+        raise bad("'baseline' must be a table")
+    if "path" in baseline:
+        cfg.baseline_path = Path(str(baseline["path"]))
+    if "update" in baseline:
+        cfg.update_baseline = bool(baseline["update"])
 
     if "fail_on" in tbl:
         name = str(tbl["fail_on"]).lower()

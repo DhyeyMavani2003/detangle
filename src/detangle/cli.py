@@ -54,6 +54,36 @@ def _build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help="enable the whole-config LLM screen sweep (implies --jury; strongest model)",
         )
+        sp.add_argument(
+            "--deep",
+            action="store_true",
+            help="thoroughness-first pass: every available lane, per-class screen "
+            "sweeps, jury cap lifted — built for overnight CI (hours are fine)",
+        )
+        sp.add_argument(
+            "--baseline",
+            nargs="?",
+            const=".detangle-baseline.json",
+            default=None,
+            metavar="FILE",
+            help="triage baseline carrying human verdicts across runs "
+            "(default file when given without a value: .detangle-baseline.json)",
+        )
+        sp.add_argument(
+            "--update-baseline",
+            action="store_true",
+            help="write the merged baseline back after the scan (implies --baseline)",
+        )
+        sp.add_argument(
+            "--only-new",
+            action="store_true",
+            help="report only findings that are new (or regressed) vs the baseline",
+        )
+        sp.add_argument(
+            "--fail-on-new",
+            action="store_true",
+            help="exit non-zero only for new/regression findings at/above --fail-on",
+        )
         sp.add_argument("--no-soft", action="store_true", help="hide advisory/info findings")
         sp.add_argument("-v", "--verbose", action="store_true")
         sp.add_argument(
@@ -77,7 +107,108 @@ def _build_parser() -> argparse.ArgumentParser:
     sp_explain.add_argument("code", help="rule code, e.g. DTC01 (a fingerprint's prefix works)")
 
     sub.add_parser("rules", help="list all rules")
+
+    sp_bl = sub.add_parser(
+        "baseline", help="triage the findings baseline (answer, approve, override)"
+    )
+    bl_sub = sp_bl.add_subparsers(dest="baseline_command", required=True)
+
+    def add_baseline_args(bp: argparse.ArgumentParser) -> None:
+        bp.add_argument("path", nargs="?", default=".", help="scanned root (default: .)")
+        bp.add_argument(
+            "--baseline",
+            default=".detangle-baseline.json",
+            metavar="FILE",
+            help="baseline file, relative to the scanned root",
+        )
+
+    bl_list = bl_sub.add_parser("list", help="list baseline entries (the triage queue)")
+    add_baseline_args(bl_list)
+    bl_list.add_argument(
+        "--status",
+        choices=("new", "open", "accepted", "resolved"),
+        default=None,
+        help="show only entries with this status",
+    )
+
+    bl_set = bl_sub.add_parser(
+        "set", help="record a human verdict: accepted (not a conflict), open, or resolved"
+    )
+    bl_set.add_argument("fingerprint", help="entry fingerprint (an unambiguous prefix works)")
+    bl_set.add_argument("status", choices=("new", "open", "accepted", "resolved"))
+    bl_set.add_argument("--note", default=None, help="why — recorded alongside the verdict")
+    add_baseline_args(bl_set)
+
+    bl_prune = bl_sub.add_parser(
+        "prune", help="delete entries whose finding no longer occurs (missing_since set)"
+    )
+    add_baseline_args(bl_prune)
     return p
+
+
+def _run_baseline(args: argparse.Namespace) -> int:
+    from .baseline import load_baseline, prune_baseline, save_baseline
+
+    root = Path(args.path).resolve()
+    bpath = Path(args.baseline)
+    if not bpath.is_absolute():
+        bpath = root / bpath
+    bl = load_baseline(bpath)
+    for w in bl.warnings:
+        print(f"warning: {w}", file=sys.stderr)
+
+    if args.baseline_command == "list":
+        entries = sorted(bl.entries.values(), key=lambda e: (e.status, e.code, e.fingerprint))
+        if args.status:
+            entries = [e for e in entries if e.status == args.status]
+        if not entries:
+            print("no baseline entries" + (f" with status '{args.status}'" if args.status else ""))
+            return 0
+        for e in entries:
+            missing = f"  (missing since {e.missing_since})" if e.missing_since else ""
+            print(f"{e.fingerprint}  [{e.status:8s}] {e.message}{missing}")
+            print(f"    files: {', '.join(e.files)}")
+            if e.note:
+                print(f"    note: {e.note}")
+        if args.status == "new":
+            print()
+            print(
+                "answer each with: detangle baseline set <fingerprint> "
+                "accepted|open|resolved --note '...'"
+            )
+        return 0
+
+    if args.baseline_command == "set":
+        matches = [
+            e
+            for fp, e in bl.entries.items()
+            if fp == args.fingerprint or fp.startswith(args.fingerprint)
+        ]
+        if not matches:
+            print(f"error: no baseline entry matches '{args.fingerprint}'", file=sys.stderr)
+            return 2
+        if len(matches) > 1:
+            print(
+                f"error: '{args.fingerprint}' is ambiguous ({len(matches)} entries):",
+                file=sys.stderr,
+            )
+            for e in matches:
+                print(f"  {e.fingerprint}  {e.message}", file=sys.stderr)
+            return 2
+        entry = matches[0]
+        entry.status = args.status
+        if args.note is not None:
+            entry.note = args.note
+        save_baseline(bl, bpath)
+        print(f"{entry.fingerprint} -> {args.status}" + (f" ({entry.note})" if entry.note else ""))
+        return 0
+
+    if args.baseline_command == "prune":
+        removed = prune_baseline(bl)
+        save_baseline(bl, bpath)
+        print(f"pruned {removed} entr{'y' if removed == 1 else 'ies'} no longer occurring")
+        return 0
+    return 2  # pragma: no cover
 
 
 def _run_scan(args: argparse.Namespace) -> ScanResult:
@@ -99,6 +230,24 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
         cfg.lane_jury = True
     if args.screen:
         cfg.lane_screen = True
+    if args.deep:
+        cfg.deep = True
+    if args.baseline is not None:
+        cfg.baseline_path = Path(args.baseline)
+    if args.update_baseline:
+        cfg.update_baseline = True
+        if cfg.baseline_path is None:
+            cfg.baseline_path = Path(".detangle-baseline.json")
+    if args.only_new:
+        cfg.only_new = True
+        if cfg.baseline_path is None:
+            print("error: --only-new requires --baseline", file=sys.stderr)
+            raise SystemExit(2)
+    if args.fail_on_new:
+        cfg.fail_on_new = True
+        if cfg.baseline_path is None:
+            print("error: --fail-on-new requires --baseline", file=sys.stderr)
+            raise SystemExit(2)
     if args.no_soft:
         cfg.include_soft = False
     if args.fail_on:
@@ -193,6 +342,9 @@ def main(argv: list[str] | None = None) -> int:
         for code, r in sorted(RULES.items()):
             print(f"{code}  {r.name:28s} [{r.default_severity.label:8s}] {r.summary}")
         return 0
+
+    if args.command == "baseline":
+        return _run_baseline(args)
 
     if args.command == "explain":
         code = args.code.upper().split(":")[0]

@@ -112,6 +112,11 @@ pip install 'detangle[jury]'    # + the anthropic SDK (API jury backend only)
 ```bash
 detangle scan                    # scan the current repo, pretty output
 detangle scan --nli --screen     # full cascade: deterministic + NLI + screen + jury
+detangle scan --deep --baseline --update-baseline --only-new
+                                 # overnight: every lane, refresh the triage baseline,
+                                 # report only what's genuinely new
+detangle scan --baseline --fail-on-new           # CI gate: only NEW conflicts fail
+detangle baseline list --status new              # the morning triage queue
 detangle scan --format sarif -o detangle.sarif   # GitHub code-scanning
 detangle diff --base origin/main # only findings introduced by your changes
 detangle explain DTP02           # what a rule means and how to fix it
@@ -207,6 +212,32 @@ what breaks the ceiling (and the only configurations that catch the procedural
 skill-ordering conflicts — 4/4 strict with the `opus` jury). Adversarially-verified false-positive shapes
 from real repos (target-vs-trigger numeric bands, do-X-instead refinements, purpose
 clauses) are encoded as permanent precision gates and regression tests.
+
+## Nightly triage: thorough scans, human answers, zero re-asking
+
+The benchmark table has a corollary: the configurations that find the most conflicts are
+the ones you cannot run on every commit. detangle's answer is a split schedule with
+memory — a checked-in `.detangle-baseline.json` that records every finding ever seen and
+every human verdict ever given:
+
+- **Overnight**, CI runs `detangle scan --deep --baseline --update-baseline` — every
+  available lane, ten per-class screen sweeps instead of one, jury cap lifted to 1000.
+  Hours are fine; nobody is waiting.
+- **In the morning**, `detangle baseline list --status new` is a short list of questions.
+  Answer each with `detangle baseline set <fingerprint> accepted|open|resolved --note "..."`
+  — or edit the JSON by hand; it is built to be hand-edited and reviewed in PRs.
+- **Answers are remembered forever.** Findings are identified by content-addressed
+  fingerprints that survive line moves, plus a code-independent pair key so a verdict
+  survives an LLM lane re-classifying the same pair. `accepted` suppresses a finding
+  permanently; a `resolved` finding that reappears is flagged as a **regression**.
+- **Only new conflicts surface.** A config with 40 known findings and 1 new one reports
+  exactly 1 item — and `detangle scan --baseline --fail-on-new` is the seconds-scale,
+  deterministic PR gate that fails only on new findings and regressions, never on the
+  known-but-open backlog.
+
+`examples/demo-agent` is the realistic showcase config, and
+`.github/workflows/nightly-deep-scan.yml` runs the full loop against it nightly. File
+format, statuses, and CI recipes: [docs/triage.md](docs/triage.md).
 
 ## Roadmap
 

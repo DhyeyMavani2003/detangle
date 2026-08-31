@@ -37,6 +37,7 @@ max_pairs = 250000
 similarity_threshold = 0.18
 ignore = ["vendor/**", "docs/generated/**"]
 respect_gitignore = true
+deep = false         # true = every scan is thoroughness-first (see triage.md); belongs in a CI-only config
 
 [detangle.lanes]
 nli = false
@@ -57,6 +58,10 @@ max_pairs = 200
 
 [detangle.screen]
 model = "opus"          # screen-lane model; use the strongest you have
+
+[detangle.baseline]
+path = ".detangle-baseline.json"
+update = false          # true = refresh the baseline on every run (--update-baseline)
 ```
 
 ## Keys
@@ -118,6 +123,14 @@ The walker additionally always skips a built-in list of vendored/derived directo
 (`.git`, `node_modules`, `.venv`, `dist`, `build`, caches, …) and applies `ignore`
 globs. Set to `false` to scan gitignored files too.
 
+### `deep` — boolean, default `false`
+
+Thoroughness-first scanning, the persistent form of `--deep`: enables every available
+lane, runs the screen as per-class sweeps (ten strong-model passes instead of one), and
+lifts the jury cap to 1000 pairs. Designed for scheduled/overnight CI where hours are
+acceptable — keep it in a dedicated CI config selected with `--config`, not in the file
+your editor hooks and PR checks read. See [triage.md](triage.md).
+
 ### `[detangle.lanes]` — table, default all `false`
 
 | Key | Type | Default | Meaning |
@@ -172,6 +185,17 @@ The screen shares the jury's `backend` / `base_url` / `api_key_env` transport se
 | key | type | default | meaning |
 |---|---|---|---|
 | `model` | string | `cross-encoder/nli-deberta-v3-small` | Hugging Face id of the NLI cross-encoder. Must have a 3-way (contradiction/entailment/neutral) head. |
+
+### `[detangle.baseline]` — table
+
+The persistent form of the `--baseline` / `--update-baseline` flags: with the table set,
+every run uses the baseline. Full semantics — entry fields, statuses, the triage
+workflow — in [triage.md](triage.md).
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `path` | string | `".detangle-baseline.json"` | The baseline file, relative to the scan root. Also the file a bare `--baseline` flag means. |
+| `update` | bool | `false` | Write the post-scan state back to the baseline on every run, same as `--update-baseline`. |
 
 ### Not settable from TOML
 
@@ -250,6 +274,11 @@ Full scan of `path` (default: `.`).
 | `--nli` | Enable the NLI lane for this run |
 | `--jury` | Enable the jury lane for this run |
 | `--screen` | Enable the screen lane for this run (implies `--jury`) |
+| `--deep` | Thoroughness-first run: every available lane, per-class screen sweeps (ten strong-model passes instead of one), jury cap lifted to 1000. Hours-scale; meant for scheduled CI. See [triage.md](triage.md). |
+| `--baseline [PATH]` | Use a baseline file for triage. Given without a value, means `.detangle-baseline.json` at the scan root (or `[detangle.baseline] path`). |
+| `--update-baseline` | Write the post-scan state back to the baseline: unseen findings recorded as `new`, disappeared ones stamped `missing_since`, prior verdicts kept. |
+| `--only-new` | Report only findings the baseline does not already answer: `new` entries and regressions. |
+| `--fail-on-new` | Exit non-zero **only** for `new`/regression findings at or above `fail_on` — known-but-`open` findings never block the build. The CI-gate companion to `--baseline`. |
 | `--no-soft` | Hide advisory/info findings (sets `include_soft = false`) |
 | `--select CODES` | Comma-separated rule codes to run **exclusively** (e.g. `DTC01,DTC03`). Unknown codes exit 2. Replaces any `[detangle.rules]` disables for the run. |
 | `-v`, `--verbose` | More detail in console output |
@@ -266,6 +295,19 @@ Runs a full scan, then reports only findings that involve config files changed v
 (tried as `base...HEAD`, falling back to `git diff base`; if git fails entirely, a warning is
 printed and *all* findings are reported). Use it in PR CI to gate only on newly introduced
 tangles.
+
+### `detangle baseline list|set|prune [path]`
+
+Manage the triage baseline without opening the JSON (editing the file directly is equally
+supported — it is designed to be hand-edited and reviewed in PRs). All three take the scan
+root as an optional positional `path` (default `.`) and `--baseline FILE` to override the
+baseline location. Statuses and workflow: [triage.md](triage.md).
+
+| Subcommand | Meaning |
+|---|---|
+| `list [--status S]` | List baseline entries, optionally filtered by status (`new`/`open`/`accepted`/`resolved`). `--status new` is the morning triage queue. |
+| `set FP STATUS [--note ...]` | Set an entry's status by fingerprint or any unique prefix, optionally recording a justification note. |
+| `prune` | Delete entries whose finding has disappeared (`missing_since` set); everything else is kept. |
 
 ### `detangle explain CODE`
 

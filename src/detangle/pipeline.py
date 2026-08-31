@@ -27,6 +27,10 @@ class ScanResult:
     suppressed: list[tuple[Finding, Suppression]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     stats: dict[str, float] = field(default_factory=dict)
+    # triage-baseline annotations: fingerprint -> "new"|"known"|"regression",
+    # plus the merge counters (new/known/regression/accepted_suppressed/missing)
+    baseline_tags: dict[str, str] = field(default_factory=dict)
+    baseline_stats: dict[str, int] = field(default_factory=dict)
 
     @property
     def worst_severity(self) -> Severity | None:
@@ -39,7 +43,14 @@ class ScanResult:
         return out
 
     def exit_code(self) -> int:
-        if any(f.severity >= self.cfg.fail_on for f in self.findings):
+        gated = self.findings
+        if self.cfg.fail_on_new and self.cfg.baseline_path is not None:
+            # CI gate for the triage loop: known-but-open findings don't
+            # block builds; only what's genuinely new (or regressed) does
+            gated = [
+                f for f in gated if self.baseline_tags.get(f.fingerprint) in ("new", "regression")
+            ]
+        if any(f.severity >= self.cfg.fail_on for f in gated):
             return 1
         if self.cfg.conflict_budget is not None and len(self.findings) > self.cfg.conflict_budget:
             return 1
@@ -48,6 +59,12 @@ class ScanResult:
 
 def scan(cfg: Config) -> ScanResult:
     t0 = time.monotonic()
+    if cfg.deep:
+        # thoroughness-first profile: every available lane, per-class screen
+        # sweeps, jury cap lifted — built for overnight CI, hours are fine
+        cfg.lane_screen = True
+        cfg.lane_nli = True  # skips gracefully when the extra isn't installed
+        cfg.jury_max_pairs = max(cfg.jury_max_pairs, 1000)
     if cfg.lane_screen:
         # the screen only nominates; the jury adjudicates its nominations
         cfg.lane_jury = True
@@ -96,6 +113,30 @@ def scan(cfg: Config) -> ScanResult:
             f.code,
         )
     )
+
+    # triage baseline: pre-fill human verdicts from previous runs, suppress
+    # what a human already dismissed, tag what's genuinely new
+    baseline_tags: dict[str, str] = {}
+    baseline_stats: dict[str, int] = {}
+    baseline_warnings: list[str] = []
+    if cfg.baseline_path is not None:
+        from .baseline import apply_baseline, load_baseline, save_baseline, today
+
+        bpath = cfg.baseline_path
+        if not bpath.is_absolute():
+            bpath = cfg.root / bpath
+        bl = load_baseline(bpath)
+        baseline_warnings = list(bl.warnings)
+        outcome = apply_baseline(findings, bl, today())
+        findings = outcome.findings
+        baseline_tags = outcome.tags
+        baseline_stats = outcome.counts
+        if cfg.only_new:
+            findings = [
+                f for f in findings if baseline_tags.get(f.fingerprint) in ("new", "regression")
+            ]
+        if cfg.update_baseline:
+            save_baseline(outcome.baseline, bpath)
     t_end = time.monotonic()
 
     return ScanResult(
@@ -105,7 +146,9 @@ def scan(cfg: Config) -> ScanResult:
         pairs=pairs,
         findings=findings,
         suppressed=suppressed,
-        warnings=list(corpus.notes) + sup_warnings,
+        baseline_tags=baseline_tags,
+        baseline_stats=baseline_stats,
+        warnings=list(corpus.notes) + sup_warnings + baseline_warnings,
         stats={
             "files": len(corpus.files),
             "units": len(units),

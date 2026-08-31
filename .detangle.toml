@@ -2,3 +2,6 @@
 [detangle]
 ecosystems = ["claude-code", "agents-md", "cursor", "copilot"]
 fail_on = "error"
+# examples/demo-agent is a fixture with deliberately planted conflicts —
+# it has its own baseline-gated CI job and must not leak into root scans
+ignore = ["examples/**"]

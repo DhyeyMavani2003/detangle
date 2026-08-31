@@ -322,6 +322,13 @@ pair-judge cascade: open-ended whole-document *verdicts* collapse (8% recall, 53
 accuracy), but whole-document *nomination* feeding a pair-level judge is the configuration
 that works.
 
+**Deep multi-sweep (`--deep`).** One generic sweep asks a single call to spot every class at
+once; under `--deep` the screen instead runs **ten** passes — the generic sweep plus one
+focused, single-lens sweep per conflict class (order, cross-layer, numeric, format,
+permit-forbid, redundancy, tension, contradiction, conditional). Each sweep reads every unit
+with one question in mind; the union of nominations goes to the jury. This is the
+thoroughness-first mode built for overnight CI — see [triage.md](triage.md).
+
 **Cost & chunking.** One screen call covers up to 150 units; larger configs are chunked with
 every always-on unit repeated in every chunk (so main-file-vs-skill pairs survive chunking).
 Screen calls are cached by (backend, model, prompt hash, unit-set hash) — re-screening an

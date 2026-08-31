@@ -22,8 +22,17 @@ swap-validated adjudication protocol (both orderings, evidence validation,
 verdict enums) — the screen buys recall, the jury keeps precision. This is
 the research's group-screen -> pair-judge cascade.
 
-Screen calls are cached by (backend, model, prompt hash, unit-set hash), so
-re-scans of an unchanged config are free.
+DEEP multi-sweep nomination (``deep = true``): the single generic sweep
+asks one call to spot every conflict class at once; recall improves when
+each class gets its own focused pass, so deep mode re-reads the same units
+once per class in ``FOCUSED_KINDS`` with a single-lens prompt and unions
+the nominations. The existing pair dedup collapses cross-sweep duplicates,
+and the jury still adjudicates everything — extra sweeps buy recall, never
+precision loss.
+
+Screen calls are cached by (backend, model, per-sweep prompt hash,
+unit-set hash) — each sweep caches independently — so re-scans of an
+unchanged config are free even in deep mode.
 """
 
 from __future__ import annotations
@@ -31,13 +40,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from pathlib import Path
 
 from ..activation import build_pair
+from ..cache import VerdictCache
 from ..config import Config
 from ..detectors.base import AnalysisContext
 from ..ir import CoActiveClass, InstructionUnit, UnitPair
 from .backends import Backend, JuryError
-from .cachekey import make_cache
 
 SCREEN_SYSTEM_PROMPT = """You are auditing an AI agent's natural-language configuration for \
 internal conflicts. You will receive the complete list of instruction units extracted from \
@@ -65,9 +75,53 @@ Respond with ONLY a JSON array (no other text). Each element:
 cross-layer|numeric|format|permit-forbid|redundant|tension>", "why": "<at most 25 words>"}
 Return [] if nothing is suspicious."""
 
-_PROMPT_HASH = hashlib.sha256(SCREEN_SYSTEM_PROMPT.encode()).hexdigest()[:12]
+FOCUSED_KINDS = (
+    "contradiction",
+    "conditional",
+    "order",
+    "cross-layer",
+    "numeric",
+    "format",
+    "permit-forbid",
+    "redundant",
+    "tension",
+)
 
 MAX_UNITS_PER_CALL = 150
+
+
+def _sweep_prompts(deep: bool) -> list[tuple[str, str]]:
+    """The sweep plan as (label, system prompt) tuples.
+
+    Always the generic whole-taxonomy sweep; in deep mode, additionally one
+    focused sweep per class in ``FOCUSED_KINDS`` — same units, same JSON
+    output contract, but a single-lens reading (recall over speed)."""
+    sweeps = [("generic", SCREEN_SYSTEM_PROMPT)]
+    if not deep:
+        return sweeps
+    for kind in FOCUSED_KINDS:
+        sweeps.append(
+            (
+                "focus:" + kind,
+                SCREEN_SYSTEM_PROMPT
+                + f"\n\nTHIS SWEEP IS FOCUSED: examine the units ONLY for the '{kind}' "
+                "class described above. Read every unit with that single lens and "
+                "nominate every pair that could plausibly belong to it; other classes "
+                "are handled by other sweeps, so do not report them here.",
+            )
+        )
+    return sweeps
+
+
+def _screen_cache(cfg: Config) -> VerdictCache:
+    """Nomination cache in its own file (``<cache-dir>/screen/verdicts.json``).
+
+    The jury lane opens ``verdicts.json`` before this lane runs and saves it
+    LAST, so sharing that file would let the jury's save clobber nominations
+    the screen saved mid-run; a dedicated file keeps a re-scan of an
+    unchanged config at zero screen calls."""
+    base = Path(cfg.cache_dir or (cfg.root / ".detangle-cache"))
+    return VerdictCache(base / "screen")
 
 
 def _unit_line(i: int, u: InstructionUnit) -> str:
@@ -124,34 +178,40 @@ def _parse_nominations(raw: str, n_units: int) -> list[tuple[int, int, str, str]
 def run_screen_lane(cfg: Config, ctx: AnalysisContext, backend: Backend) -> list[UnitPair]:
     """Nominate pairs with the screen model; returns swap-ready UnitPairs.
 
+    Runs one generic sweep, plus one focused sweep per conflict class when
+    ``cfg.deep`` is set; nominations are unioned across sweeps and deduped.
     The caller (the jury lane) adjudicates them; the screen itself never
     emits findings.
     """
     units = ctx.units
     if len(units) < 2:
         return []
-    cache = make_cache(cfg)
+    cache = _screen_cache(cfg)
     unit_hash = hashlib.sha256(
         "\x00".join(u.uid + str(u.span.start_line) for u in units).encode()
     ).hexdigest()[:16]
+    sweeps = _sweep_prompts(cfg.deep)
+    chunks = _chunks(units)
 
     nominations: list[tuple[int, int, str, str]] = []
-    for chunk in _chunks(units):
-        chunk_ids = hashlib.sha256(str([i for i, _ in chunk]).encode()).hexdigest()[:8]
-        key = cache.key(f"{backend.ident}|screen", _PROMPT_HASH, f"{unit_hash}|{chunk_ids}")
-        hit = cache.get(key)
-        if hit is not None:
-            nominations.extend(tuple(x) for x in hit)
-            continue
-        listing = "\n".join(_unit_line(i, u) for i, u in chunk)
-        try:
-            raw = backend.complete(SCREEN_SYSTEM_PROMPT, listing + "\n\nNominate pairs. JSON only.")
-        except JuryError as e:
-            ctx.corpus.notes.append(f"screen lane: backend failure ({e}); sweep incomplete")
-            continue
-        found = _parse_nominations(raw, len(units))
-        cache.put(key, [list(x) for x in found])
-        nominations.extend(found)
+    for _label, prompt in sweeps:
+        prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:12]
+        for chunk in chunks:
+            chunk_ids = hashlib.sha256(str([i for i, _ in chunk]).encode()).hexdigest()[:8]
+            key = cache.key(f"{backend.ident}|screen", prompt_hash, f"{unit_hash}|{chunk_ids}")
+            hit = cache.get(key)
+            if hit is not None:
+                nominations.extend(tuple(x) for x in hit)
+                continue
+            listing = "\n".join(_unit_line(i, u) for i, u in chunk)
+            try:
+                raw = backend.complete(prompt, listing + "\n\nNominate pairs. JSON only.")
+            except JuryError as e:
+                ctx.corpus.notes.append(f"screen lane: backend failure ({e}); sweep incomplete")
+                continue
+            found = _parse_nominations(raw, len(units))
+            cache.put(key, [list(x) for x in found])
+            nominations.extend(found)
     cache.save()
 
     seen: set[str] = set()
@@ -170,7 +230,7 @@ def run_screen_lane(cfg: Config, ctx: AnalysisContext, backend: Backend) -> list
         pair.block_keys = (f"screen:{kind or 'nominated'}",)
         pairs.append(pair)
     ctx.corpus.notes.append(
-        f"screen lane: {len(nominations)} nomination(s) from {backend.ident}, "
-        f"{len(pairs)} pair(s) sent to the jury"
+        f"screen lane: {len(nominations)} nomination(s) from {backend.ident} across "
+        f"{len(sweeps)} sweep(s), {len(pairs)} pair(s) sent to the jury"
     )
     return pairs
