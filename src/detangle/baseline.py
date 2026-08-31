@@ -50,6 +50,9 @@ class BaselineEntry:
 
     ``status``, ``note`` and ``first_seen`` belong to the human/history;
     every other descriptive field is refreshed from the latest scan.
+    ``lanes`` records which analysis lanes produced the finding, so a
+    cheaper later run (deterministic-only CI after a deep nightly) does not
+    mark deep-lane findings as gone.
     """
 
     fingerprint: str
@@ -61,6 +64,7 @@ class BaselineEntry:
     severity: str = ""
     files: list[str] = field(default_factory=list)
     quotes: list[str] = field(default_factory=list)
+    lanes: list[str] = field(default_factory=list)
     first_seen: str = ""
     missing_since: str | None = None
 
@@ -70,6 +74,10 @@ class Baseline:
     entries: dict[str, BaselineEntry] = field(default_factory=dict)  # keyed by fingerprint
     warnings: list[str] = field(default_factory=list)
     version: int = 1
+    # True when a baseline FILE existed but could not be read/parsed. Writers
+    # must refuse to save over it — overwriting would destroy every human
+    # verdict the unreadable file still physically contains.
+    corrupt: bool = False
 
 
 @dataclass
@@ -96,6 +104,11 @@ def finding_pair_key(f: Finding) -> str:
     """
     if f.units:
         return "+".join(sorted(u.uid for u in f.units))
+    if not f.evidence:
+        # no units and no evidence: there is no content to key on, and a
+        # shared constant key would let unrelated findings adopt each
+        # other's verdicts — such findings have exact-fingerprint identity only
+        return ""
     basis = "\x00".join(sorted(f"{ev.span.path}:{' '.join(ev.quote.split())}" for ev in f.evidence))
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
 
@@ -122,16 +135,19 @@ def load_baseline(path: Path) -> Baseline:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return b
-    except OSError as exc:
-        b.warnings.append(f"baseline {path}: unreadable ({exc}); starting fresh")
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        b.warnings.append(f"baseline {path}: unreadable ({exc}); refusing to overwrite it")
+        b.corrupt = True
         return b
     try:
         data = json.loads(raw)
-    except ValueError as exc:
-        b.warnings.append(f"baseline {path}: corrupt JSON ({exc}); starting fresh")
+    except (ValueError, RecursionError) as exc:
+        b.warnings.append(f"baseline {path}: corrupt JSON ({exc}); refusing to overwrite it")
+        b.corrupt = True
         return b
     if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
-        b.warnings.append(f"baseline {path}: unexpected shape; starting fresh")
+        b.warnings.append(f"baseline {path}: unexpected shape; refusing to overwrite it")
+        b.corrupt = True
         return b
     if isinstance(data.get("version"), int):
         b.version = data["version"]
@@ -160,6 +176,7 @@ def load_baseline(path: Path) -> Baseline:
             severity=_str(item.get("severity")),
             files=_str_list(item.get("files")),
             quotes=_str_list(item.get("quotes")),
+            lanes=_str_list(item.get("lanes")),
             first_seen=_str(item.get("first_seen")),
             missing_since=missing if isinstance(missing, str) else None,
         )
@@ -183,6 +200,7 @@ def save_baseline(b: Baseline, path: Path) -> None:
                 "severity": e.severity,
                 "files": e.files,
                 "quotes": e.quotes,
+                "lanes": e.lanes,
                 "first_seen": e.first_seen,
                 "missing_since": e.missing_since,
             }
@@ -194,53 +212,123 @@ def save_baseline(b: Baseline, path: Path) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def _refresh(entry: BaselineEntry, f: Finding) -> None:
-    """Overwrite the descriptive fields from the latest scan of the finding."""
-    entry.message = f.message
+def _refresh(entry: BaselineEntry, f: Finding, adopted: bool) -> None:
+    """Refresh the descriptive fields from the latest sighting.
+
+    Severity, files, lanes, and the pair_key always track the latest scan.
+    ``message``/``quotes`` are refreshed for deterministic findings (their
+    wording only changes when the underlying text changed) and on adoption,
+    but are KEPT for LLM-lane findings sighted under the same fingerprint:
+    a jury re-verdict words its message differently every run, and the
+    checked-in artifact must not churn on quiet nights.
+    """
+    entry.pair_key = finding_pair_key(f)
     entry.severity = f.severity.label
     entry.files = sorted({ev.span.path for ev in f.evidence} | {u.file.path for u in f.units})
-    entry.quotes = [" ".join(ev.quote.split())[:_QUOTE_CAP] for ev in f.evidence]
+    entry.lanes = sorted(f.lanes)
+    if adopted or not entry.message or f.lanes == ("deterministic",):
+        entry.message = f.message
+        entry.quotes = [" ".join(ev.quote.split())[:_QUOTE_CAP] for ev in f.evidence]
 
 
-def _adopt(baseline: Baseline, f: Finding, fp: str, matched: set[str]) -> BaselineEntry | None:
+def _adopt(baseline: Baseline, f: Finding, fp: str, claimed: set[str]) -> BaselineEntry | None:
     """Fallback match on pair_key, re-keying the entry to the new fingerprint.
 
     This keeps a human verdict attached when a lane re-classifies the same
     pair under a sibling CONFLICT_FAMILY code, or when a unit-less finding's
     anchor line shifts (same code, same quotes, new fingerprint).
+
+    Only entries not already claimed by an exact match are candidates. When
+    several candidates share the pair_key, prefer the exact code, then the
+    exact message; if the choice is STILL ambiguous, refuse — an arbitrary
+    pick could silently hand one finding another's human verdict, and "shows
+    up as new again" is the safe failure.
     """
     pair_key = finding_pair_key(f)
-    for old_fp, entry in list(baseline.entries.items()):
-        if old_fp in matched or entry.pair_key != pair_key:
-            continue
-        if entry.code != f.code and not (
-            entry.code in CONFLICT_FAMILY and f.code in CONFLICT_FAMILY
-        ):
-            continue
-        del baseline.entries[old_fp]
-        entry.fingerprint = fp
-        entry.code = f.code
-        baseline.entries[fp] = entry
-        return entry
-    return None
+    if not pair_key:
+        return None
+    cands = [
+        (old_fp, entry)
+        for old_fp, entry in baseline.entries.items()
+        if old_fp not in claimed
+        and entry.pair_key == pair_key
+        and (entry.code == f.code or (entry.code in CONFLICT_FAMILY and f.code in CONFLICT_FAMILY))
+    ]
+    if len(cands) > 1:
+        same_code = [c for c in cands if c[1].code == f.code]
+        if same_code:
+            cands = same_code
+    if len(cands) > 1:
+        same_msg = [c for c in cands if c[1].message == f.message]
+        if same_msg:
+            cands = same_msg
+    if len(cands) != 1:
+        return None
+    old_fp, entry = cands[0]
+    del baseline.entries[old_fp]
+    entry.fingerprint = fp
+    entry.code = f.code
+    baseline.entries[fp] = entry
+    return entry
 
 
-def apply_baseline(findings: list[Finding], baseline: Baseline, run_date: str) -> BaselineOutcome:
+def apply_baseline(
+    findings: list[Finding],
+    baseline: Baseline,
+    run_date: str,
+    ran_lanes: set[str] | None = None,
+    disabled_codes: frozenset[str] = frozenset(),
+) -> BaselineOutcome:
     """Merge one run's (post-dedupe) findings against the baseline.
 
     Mutates ``baseline`` in place: matched entries are refreshed, unseen
     findings become new entries, and entries no finding matched get
     ``missing_since`` stamped (once). Entries are never auto-deleted —
     that is ``prune_baseline``'s explicit job.
+
+    Matching is two-phase: every exact fingerprint match is claimed FIRST,
+    and only then may leftover findings adopt leftover entries by pair_key —
+    so a sibling-code finding can never steal the entry that byte-exactly
+    belongs to a finding later in the list.
+
+    ``ran_lanes``/``disabled_codes`` guard the missing stamp: an entry whose
+    lanes did not all run this time (a deterministic-only CI run after a
+    deep nightly), or whose rule is disabled (``--select``), is counted as
+    ``unchecked`` and keeps its state — a cheaper run proves nothing about
+    it, and stamping it would make ``prune`` destroy human verdicts.
     """
     tags: dict[str, str] = {}
-    counts = {"new": 0, "known": 0, "regression": 0, "accepted_suppressed": 0, "missing": 0}
+    counts = {
+        "new": 0,
+        "known": 0,
+        "regression": 0,
+        "accepted_suppressed": 0,
+        "missing": 0,
+        "unchecked": 0,
+    }
     kept: list[Finding] = []
-    matched: set[str] = set()
+    claimed: set[str] = set()
 
-    for f in findings:
+    # phase 1: exact fingerprint matches claim their entries
+    resolved: dict[int, tuple[BaselineEntry, bool]] = {}  # index -> (entry, adopted)
+    for i, f in enumerate(findings):
+        entry = baseline.entries.get(f.fingerprint)
+        if entry is not None and f.fingerprint not in claimed:
+            resolved[i] = (entry, False)
+            claimed.add(f.fingerprint)
+
+    # phase 2: the rest may adopt unclaimed entries by pair_key (re-keying)
+    for i, f in enumerate(findings):
+        if i in resolved:
+            continue
+        entry = _adopt(baseline, f, f.fingerprint, claimed)
+        if entry is not None:
+            resolved[i] = (entry, True)
+            claimed.add(entry.fingerprint)
+
+    for i, f in enumerate(findings):
         fp = f.fingerprint
-        entry = baseline.entries.get(fp) or _adopt(baseline, f, fp, matched)
+        entry, adopted = resolved.get(i, (None, True))
         if entry is None:
             entry = BaselineEntry(
                 fingerprint=fp,
@@ -250,9 +338,10 @@ def apply_baseline(findings: list[Finding], baseline: Baseline, run_date: str) -
                 first_seen=run_date,
             )
             baseline.entries[fp] = entry
-        matched.add(fp)
+            claimed.add(fp)
+            # adopted=True: new entries always take the finding's wording
         entry.missing_since = None
-        _refresh(entry, f)
+        _refresh(entry, f, adopted)
         if entry.status == "accepted":
             # the human said not-a-conflict: suppress, but still record the tag
             tags[fp] = "accepted"
@@ -272,7 +361,13 @@ def apply_baseline(findings: list[Finding], baseline: Baseline, run_date: str) -
         kept.append(f)
 
     for fp, entry in baseline.entries.items():
-        if fp in matched:
+        if fp in claimed:
+            continue
+        lanes_needed = set(entry.lanes) or {"deterministic"}
+        if (ran_lanes is not None and not lanes_needed <= ran_lanes) or (
+            entry.code in disabled_codes
+        ):
+            counts["unchecked"] += 1  # this run couldn't have seen it; no verdict
             continue
         counts["missing"] += 1
         if entry.missing_since is None:  # stamp once; identical reruns must not churn

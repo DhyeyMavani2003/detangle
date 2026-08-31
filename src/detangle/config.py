@@ -136,6 +136,10 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
         cfg.baseline_path = Path(str(baseline["path"]))
     if "update" in baseline:
         cfg.update_baseline = bool(baseline["update"])
+    if baseline and cfg.baseline_path is None:
+        # a [detangle.baseline] table opts into the baseline stage even
+        # without an explicit path — e.g. `update = true` alone must work
+        cfg.baseline_path = Path(".detangle-baseline.json")
 
     if "fail_on" in tbl:
         name = str(tbl["fail_on"]).lower()

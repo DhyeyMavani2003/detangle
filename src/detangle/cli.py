@@ -9,6 +9,7 @@ detangle rules                 list all rules
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,17 @@ from . import __version__
 from .config import ConfigError, load_config
 from .pipeline import ScanResult, scan
 from .taxonomy import RULES, Severity
+
+# bare `--baseline` must mean "the configured default", not clobber a path
+# set in [detangle.baseline] — so the const is a sentinel, resolved after
+# the config file is loaded
+_BASELINE_DEFAULT_SENTINEL = "\0default"
+
+
+def _plain(text: str) -> str:
+    """Strip terminal control characters from baseline-sourced text before
+    printing — the artifact is hand-editable, so its strings are untrusted."""
+    return re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", text)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -63,11 +75,12 @@ def _build_parser() -> argparse.ArgumentParser:
         sp.add_argument(
             "--baseline",
             nargs="?",
-            const=".detangle-baseline.json",
+            const=_BASELINE_DEFAULT_SENTINEL,
             default=None,
             metavar="FILE",
             help="triage baseline carrying human verdicts across runs "
-            "(default file when given without a value: .detangle-baseline.json)",
+            "(default file when given without a value: .detangle-baseline.json, "
+            "or the [detangle.baseline] path from the config file)",
         )
         sp.add_argument(
             "--update-baseline",
@@ -147,7 +160,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_baseline(args: argparse.Namespace) -> int:
-    from .baseline import load_baseline, prune_baseline, save_baseline
+    from .baseline import load_baseline, prune_baseline
 
     root = Path(args.path).resolve()
     bpath = Path(args.baseline)
@@ -156,6 +169,13 @@ def _run_baseline(args: argparse.Namespace) -> int:
     bl = load_baseline(bpath)
     for w in bl.warnings:
         print(f"warning: {w}", file=sys.stderr)
+    if bl.corrupt and args.baseline_command in ("set", "prune"):
+        print(
+            "error: refusing to modify an unreadable baseline — fix or restore "
+            f"{bpath} first (its verdicts would be destroyed by a rewrite)",
+            file=sys.stderr,
+        )
+        return 2
 
     if args.baseline_command == "list":
         entries = sorted(bl.entries.values(), key=lambda e: (e.status, e.code, e.fingerprint))
@@ -165,11 +185,11 @@ def _run_baseline(args: argparse.Namespace) -> int:
             print("no baseline entries" + (f" with status '{args.status}'" if args.status else ""))
             return 0
         for e in entries:
-            missing = f"  (missing since {e.missing_since})" if e.missing_since else ""
-            print(f"{e.fingerprint}  [{e.status:8s}] {e.message}{missing}")
-            print(f"    files: {', '.join(e.files)}")
+            missing = f"  (missing since {_plain(e.missing_since)})" if e.missing_since else ""
+            print(f"{_plain(e.fingerprint)}  [{e.status:8s}] {_plain(e.message)}{missing}")
+            print(f"    files: {_plain(', '.join(e.files))}")
             if e.note:
-                print(f"    note: {e.note}")
+                print(f"    note: {_plain(e.note)}")
         if args.status == "new":
             print()
             print(
@@ -199,16 +219,32 @@ def _run_baseline(args: argparse.Namespace) -> int:
         entry.status = args.status
         if args.note is not None:
             entry.note = args.note
-        save_baseline(bl, bpath)
-        print(f"{entry.fingerprint} -> {args.status}" + (f" ({entry.note})" if entry.note else ""))
+        if not _save_or_report(bl, bpath):
+            return 2
+        print(
+            f"{_plain(entry.fingerprint)} -> {args.status}"
+            + (f" ({_plain(entry.note)})" if entry.note else "")
+        )
         return 0
 
     if args.baseline_command == "prune":
         removed = prune_baseline(bl)
-        save_baseline(bl, bpath)
+        if not _save_or_report(bl, bpath):
+            return 2
         print(f"pruned {removed} entr{'y' if removed == 1 else 'ies'} no longer occurring")
         return 0
     return 2  # pragma: no cover
+
+
+def _save_or_report(bl, bpath: Path) -> bool:
+    from .baseline import save_baseline
+
+    try:
+        save_baseline(bl, bpath)
+    except OSError as exc:
+        print(f"error: cannot write {bpath}: {exc}", file=sys.stderr)
+        return False
+    return True
 
 
 def _run_scan(args: argparse.Namespace) -> ScanResult:
@@ -233,11 +269,25 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
     if args.deep:
         cfg.deep = True
     if args.baseline is not None:
-        cfg.baseline_path = Path(args.baseline)
+        if args.baseline != _BASELINE_DEFAULT_SENTINEL:
+            cfg.baseline_path = Path(args.baseline)
+        elif cfg.baseline_path is None:  # bare --baseline keeps a configured path
+            cfg.baseline_path = Path(".detangle-baseline.json")
     if args.update_baseline:
         cfg.update_baseline = True
         if cfg.baseline_path is None:
             cfg.baseline_path = Path(".detangle-baseline.json")
+    if cfg.baseline_path is not None:
+        resolved = cfg.baseline_path
+        if not resolved.is_absolute():
+            resolved = cfg.root / resolved
+        if resolved.is_dir():
+            print(
+                f"error: --baseline expects a file, got directory {resolved} "
+                "(put the repository path before the flags: detangle scan PATH --baseline)",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
     if args.only_new:
         cfg.only_new = True
         if cfg.baseline_path is None:

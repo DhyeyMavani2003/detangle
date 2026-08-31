@@ -31,6 +31,9 @@ class ScanResult:
     # plus the merge counters (new/known/regression/accepted_suppressed/missing)
     baseline_tags: dict[str, str] = field(default_factory=dict)
     baseline_stats: dict[str, int] = field(default_factory=dict)
+    # findings count for the conflict-budget gate: the pre---only-new count
+    # (a narrower VIEW must not loosen the budget); -1 = use len(findings)
+    budget_count: int = -1
 
     @property
     def worst_severity(self) -> Severity | None:
@@ -52,7 +55,8 @@ class ScanResult:
             ]
         if any(f.severity >= self.cfg.fail_on for f in gated):
             return 1
-        if self.cfg.conflict_budget is not None and len(self.findings) > self.cfg.conflict_budget:
+        n = self.budget_count if self.budget_count >= 0 else len(self.findings)
+        if self.cfg.conflict_budget is not None and n > self.cfg.conflict_budget:
             return 1
         return 0
 
@@ -119,6 +123,7 @@ def scan(cfg: Config) -> ScanResult:
     baseline_tags: dict[str, str] = {}
     baseline_stats: dict[str, int] = {}
     baseline_warnings: list[str] = []
+    budget_count = -1
     if cfg.baseline_path is not None:
         from .baseline import apply_baseline, load_baseline, save_baseline, today
 
@@ -127,16 +132,32 @@ def scan(cfg: Config) -> ScanResult:
             bpath = cfg.root / bpath
         bl = load_baseline(bpath)
         baseline_warnings = list(bl.warnings)
-        outcome = apply_baseline(findings, bl, today())
+        outcome = apply_baseline(
+            findings,
+            bl,
+            today(),
+            ran_lanes=set(ctx.lanes_ran),
+            disabled_codes=cfg.disabled_rules,
+        )
         findings = outcome.findings
         baseline_tags = outcome.tags
         baseline_stats = outcome.counts
+        budget_count = len(findings)  # the budget gates reality, not the view
         if cfg.only_new:
             findings = [
                 f for f in findings if baseline_tags.get(f.fingerprint) in ("new", "regression")
             ]
         if cfg.update_baseline:
-            save_baseline(outcome.baseline, bpath)
+            if bl.corrupt:
+                baseline_warnings.append(
+                    f"baseline {bpath}: not updated — the existing file is unreadable "
+                    "and overwriting it would destroy the verdicts it still contains"
+                )
+            else:
+                try:
+                    save_baseline(outcome.baseline, bpath)
+                except OSError as exc:
+                    baseline_warnings.append(f"baseline {bpath}: could not write ({exc})")
     t_end = time.monotonic()
 
     return ScanResult(
@@ -148,6 +169,7 @@ def scan(cfg: Config) -> ScanResult:
         suppressed=suppressed,
         baseline_tags=baseline_tags,
         baseline_stats=baseline_stats,
+        budget_count=budget_count,
         warnings=list(corpus.notes) + sup_warnings + baseline_warnings,
         stats={
             "files": len(corpus.files),

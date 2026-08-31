@@ -19,6 +19,10 @@ class AnalysisContext:
     # pair keys already claimed by a higher-priority detector; later detectors
     # skip claimed pairs so one root cause yields one finding
     claimed: set[str] = field(default_factory=set)
+    # lanes that actually completed this run (not merely enabled): the
+    # baseline's missing-stamp logic must not treat a finding as gone when
+    # the lane that produced it was skipped or aborted
+    lanes_ran: set[str] = field(default_factory=lambda: {"deterministic"})
 
     def claim(self, pair: UnitPair) -> None:
         self.claimed.add(pair.key)

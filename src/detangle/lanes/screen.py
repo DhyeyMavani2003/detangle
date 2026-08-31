@@ -187,12 +187,15 @@ def run_screen_lane(cfg: Config, ctx: AnalysisContext, backend: Backend) -> list
     if len(units) < 2:
         return []
     cache = _screen_cache(cfg)
+    # hash the exact listing lines the model sees — activation/layer metadata
+    # included — so a trigger-description or glob edit misses the cache
     unit_hash = hashlib.sha256(
-        "\x00".join(u.uid + str(u.span.start_line) for u in units).encode()
+        "\x00".join(_unit_line(i, u) for i, u in enumerate(units)).encode()
     ).hexdigest()[:16]
     sweeps = _sweep_prompts(cfg.deep)
     chunks = _chunks(units)
 
+    complete = True
     nominations: list[tuple[int, int, str, str]] = []
     for _label, prompt in sweeps:
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:12]
@@ -208,6 +211,7 @@ def run_screen_lane(cfg: Config, ctx: AnalysisContext, backend: Backend) -> list
                 raw = backend.complete(prompt, listing + "\n\nNominate pairs. JSON only.")
             except JuryError as e:
                 ctx.corpus.notes.append(f"screen lane: backend failure ({e}); sweep incomplete")
+                complete = False
                 continue
             found = _parse_nominations(raw, len(units))
             cache.put(key, [list(x) for x in found])
@@ -229,6 +233,8 @@ def run_screen_lane(cfg: Config, ctx: AnalysisContext, backend: Backend) -> list
         seen.add(pair_key)
         pair.block_keys = (f"screen:{kind or 'nominated'}",)
         pairs.append(pair)
+    if complete:
+        ctx.lanes_ran.add("screen")
     ctx.corpus.notes.append(
         f"screen lane: {len(nominations)} nomination(s) from {backend.ident} across "
         f"{len(sweeps)} sweep(s), {len(pairs)} pair(s) sent to the jury"

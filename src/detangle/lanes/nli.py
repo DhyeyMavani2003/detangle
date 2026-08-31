@@ -108,6 +108,7 @@ def run_nli_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) -> 
         return findings
 
     cleared, not_cleared = band_pairs(ctx, scorer)
+    ctx.lanes_ran.add("nli")
     ctx.corpus.notes.append(
         f"NLI lane: {len(cleared)} pair(s) auto-cleared as compatible, "
         f"{len(not_cleared)} left for adjudication"

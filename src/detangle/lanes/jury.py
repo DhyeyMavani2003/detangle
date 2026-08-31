@@ -272,6 +272,7 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
 
     calls = 0
     transient_failures = 0
+    aborted = False
     for pair in banded:
         pair_lanes = (
             ("jury", "screen")
@@ -287,6 +288,7 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
                     f"jury lane: aborting after {transient_failures} backend failures "
                     f"({result.get('reason', '')})"
                 )
+                aborted = True
                 break
             continue
         if result.get("abstained"):
@@ -353,5 +355,7 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
             )
         )
     cache.save()
+    if not aborted:
+        ctx.lanes_ran.add("jury")
     ctx.corpus.notes.append(f"jury lane: adjudicated {calls} pair(s) with {juror.ident}")
     return findings

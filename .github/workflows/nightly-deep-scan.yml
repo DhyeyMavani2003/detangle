@@ -44,6 +44,14 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[jury]"
+      # Persist the verdict/screen caches between nights: cached verdicts keep
+      # LLM re-runs free AND stable (no re-wording churn in the baseline).
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.TARGET }}/.detangle-cache
+          key: detangle-cache-${{ env.TARGET }}-${{ github.run_id }}
+          restore-keys: |
+            detangle-cache-${{ env.TARGET }}-
       - name: Deep scan
         # Needs the ANTHROPIC_API_KEY repository secret for the LLM lanes.
         # Without it the LLM lanes skip gracefully and the run degrades to the
@@ -77,6 +85,9 @@ jobs:
           path: |
             deep-report.md
             ${{ env.TARGET }}/.detangle-baseline.json
+          # v4 excludes dotfiles by default — without this the refreshed
+          # baseline never leaves the job and commit-baseline would no-op
+          include-hidden-files: true
           if-no-files-found: warn
       - name: Surface scan result
         if: always()

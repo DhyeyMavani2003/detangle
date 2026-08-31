@@ -13,11 +13,12 @@ from detangle.pipeline import scan
 
 from .conftest import write_tree
 
-# A tree with one crisp deterministic conflict (numeric clash) that the
-# deterministic lane reliably finds.
+# A tree with one crisp deterministic conflict — a genuinely non-intersecting
+# numeric clash (DTC03 at error severity) plus the Zed first-match advisory,
+# so the baseline tests exercise entries at two severities.
 CONFLICT_TREE = {
-    "CLAUDE.md": "# Rules\n\nKeep pull requests under 300 changed lines.\n",
-    "AGENTS.md": "# Rules\n\nPull requests may include up to 900 changed lines.\n",
+    "CLAUDE.md": "# Rules\n\nRetry flaky tests at most 3 times.\n",
+    "AGENTS.md": "# Rules\n\nRetry flaky tests exactly 5 times.\n",
 }
 
 
@@ -89,7 +90,7 @@ class TestPipelineBaseline:
         r = _scan(tmp_path, baseline_path=bpath, only_new=True)
         assert r.findings, "the new contradiction must surface"
         assert all(r.baseline_tags[f.fingerprint] == "new" for f in r.findings)
-        assert not any("300" in ev.quote for f in r.findings for ev in f.evidence), (
+        assert not any("Retry" in ev.quote for f in r.findings for ev in f.evidence), (
             "known findings must be hidden under --only-new"
         )
 
@@ -165,7 +166,7 @@ class TestBaselineCli:
                 str(tmp_path / "r.json"),
             ]
         )
-        assert code == 0
+        assert code == 1, "the untriaged DTC03 error legitimately fails the run"
         return tmp_path / ".detangle-baseline.json"
 
     def test_scan_flag_writes_default_baseline(self, tmp_path: Path):

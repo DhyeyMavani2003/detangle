@@ -104,11 +104,12 @@ def render_console(result: ScanResult, verbose: bool = False) -> None:
         )
     if result.baseline_stats:
         b = result.baseline_stats
+        unchecked = f" · {b['unchecked']} unchecked (lane not run)" if b.get("unchecked") else ""
         console.print(
             f"\n[bold]baseline:[/bold] {b.get('new', 0)} new · "
             f"{b.get('regression', 0)} regression · {b.get('known', 0)} known · "
             f"{b.get('accepted_suppressed', 0)} suppressed by human verdict · "
-            f"{b.get('missing', 0)} no longer occurring"
+            f"{b.get('missing', 0)} no longer occurring{unchecked}"
         )
 
 
@@ -286,10 +287,11 @@ def render_markdown(result: ScanResult) -> str:
         lines.append("✅ No findings.")
     if result.baseline_stats:
         b = result.baseline_stats
+        unchecked = f" · {b['unchecked']} unchecked (lane not run)" if b.get("unchecked") else ""
         lines.append(
             f"Baseline: **{b.get('new', 0)} new** · {b.get('regression', 0)} regression · "
             f"{b.get('known', 0)} known · {b.get('accepted_suppressed', 0)} suppressed by "
-            f"human verdict · {b.get('missing', 0)} no longer occurring."
+            f"human verdict · {b.get('missing', 0)} no longer occurring{unchecked}."
         )
         lines.append("")
     for f in result.findings:
@@ -324,5 +326,13 @@ def render_markdown(result: ScanResult) -> str:
                 f"- `{f.fingerprint}` — {sup.reason or '⚠ no justification given'} "
                 f"(`{sup.path}:{sup.line}`)"
             )
+        lines.append("")
+    if result.warnings:
+        # nightly CI reads exactly this rendering — degradation notices
+        # (a skipped lane, an unwritable baseline) must not be invisible there
+        lines.append("## Notes")
+        lines.append("")
+        for w in result.warnings:
+            lines.append(f"- {w}")
         lines.append("")
     return "\n".join(lines)

@@ -34,9 +34,10 @@ was found and what was decided. Each entry carries:
 | `code` | The rule code (`DTC01`, `DTP02`, …). |
 | `status` | The human verdict: `new` / `open` / `accepted` / `resolved`. |
 | `note` | Your justification. Write one — the baseline is the record future readers get. |
-| `message`, `severity`, `files`, `quotes` | A snapshot of the finding, so the baseline is reviewable on its own without re-running the scan. |
+| `message`, `severity`, `files`, `quotes` | A snapshot of the finding, so the baseline is reviewable on its own without re-running the scan. For LLM-lane findings, `message`/`quotes` keep the wording from the first sighting — a jury re-verdict phrases itself differently every night, and the checked-in artifact must not churn. |
+| `lanes` | Which analysis lanes produced the finding. A cheaper later run (a deterministic-only PR gate after a deep nightly) does **not** mark deep-lane entries missing — it counts them `unchecked`, because that run could never have seen them. |
 | `first_seen` | Date the finding first appeared. |
-| `missing_since` | Date the finding stopped appearing (stamped once; not set while the finding is present). |
+| `missing_since` | Date the finding stopped appearing (stamped once; not set while the finding is present, and never stamped by a run whose lanes couldn't have seen the entry). |
 
 ### Identity: what survives what
 
@@ -53,6 +54,14 @@ Every entry carries two ids because two different things must survive:
   *pair of instructions*, not about the code a lane happened to choose, so the verdict is
   matched by `pair_key` as well: a re-classified pair keeps its human answer instead of
   resurfacing as "new".
+
+Matching is deliberately conservative: exact fingerprint matches are claimed first
+(across the whole run — a sibling-code finding can never steal an entry that
+byte-exactly belongs to another finding), pair_key adoption then applies only to what
+remains, and an *ambiguous* adoption (several candidates that no code or message
+tie-break separates) is refused — the finding surfaces as new rather than inheriting a
+verdict that might belong to something else. "Asks again" is the safe failure;
+"silently suppressed with someone else's answer" is not.
 
 ---
 
@@ -81,6 +90,11 @@ Two mechanics worth spelling out:
 `accepted` is deliberately permanent: once a human says "not a conflict", that answer is
 pre-filled on every future run, forever. This is the difference between a baseline and a
 snooze button.
+
+One more safety property: an unreadable or corrupt baseline file is **never overwritten**
+— the scan degrades to no-baseline behavior with a warning, and `detangle baseline
+set`/`prune` refuse to run, because rewriting the file would destroy the verdicts it
+still physically contains. Fix or restore the file (it lives in git) and re-run.
 
 ---
 

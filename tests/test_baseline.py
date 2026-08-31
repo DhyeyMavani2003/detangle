@@ -116,6 +116,7 @@ class TestApplyBaseline:
             "regression": 0,
             "accepted_suppressed": 0,
             "missing": 0,
+            "unchecked": 0,
         }
         e = b.entries[fp]
         assert e.status == "new"
