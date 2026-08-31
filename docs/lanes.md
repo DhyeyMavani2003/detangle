@@ -255,12 +255,13 @@ backend on the novel-phrasing holdout — 30 conflict + 19 benign trees
 | + NLI auto-clear (no jury) | 5/30 (17%) | 5/30 (17%) | 0/19 |
 | NLI + jury (`haiku`) | 8/30 (27%) | 10/30 (33%) | 1/19 |
 | NLI + jury (`sonnet`) | 7/30 (23%) | 11/30 (37%) | 2/19 |
-| NLI + screen (`opus`) + jury (`sonnet`) | **17/30 (57%)** | **27/30 (90%)** | 4/19 |
+| NLI + screen (`opus`) + jury (`sonnet`) | 17/30 (57%) | **27/30 (90%)** | 4/19 |
+| NLI + screen (`opus`) + jury (`opus`) | **20/30 (67%)** | **27/30 (90%)** | 2/19 |
 
 Two structural lessons in that table. First, a pair-level jury plateaus at ~a third of
 conflicts regardless of juror strength — the bottleneck is candidate formation, which is
-what the screen lane fixes (it is also the only configuration that catches the
-procedural/skill-ordering class: 4/4 class-lenient). Second, every measured false
+what the screen lane fixes (the screen configurations are also the only ones that catch
+the procedural/skill-ordering class — 4/4 strict with the `opus` jury). Second, every measured false
 positive in every configuration was a CONDITIONAL_CONFLICT verdict — which is why jury
 conditional-conflict findings are emitted at **advisory** severity (never CI-failing),
 while jury CONTRADICTORY findings are warnings. The verdict cache made repeat scans free

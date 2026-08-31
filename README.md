@@ -189,7 +189,8 @@ python -m benchmarks.run_eval
   | + NLI auto-clear (no jury) | 5/30 (17%) | 5/30 (17%) | 0/19 |
   | NLI + jury (`haiku`) | 8/30 (27%) | 10/30 (33%) | 1/19* |
   | NLI + jury (`sonnet`) | 7/30 (23%) | 11/30 (37%) | 2/19* |
-  | NLI + screen (`opus`) + jury (`sonnet`) | **17/30 (57%)** | **27/30 (90%)** | 4/19* |
+  | NLI + screen (`opus`) + jury (`sonnet`) | 17/30 (57%) | **27/30 (90%)** | 4/19* |
+  | NLI + screen (`opus`) + jury (`opus`) | **20/30 (67%)** | **27/30 (90%)** | 2/19* |
 
   \* every measured false positive, in every configuration, is a jury
   CONDITIONAL_CONFLICT — the model's "maybe" bucket — so those findings land at
@@ -202,8 +203,8 @@ contradictions, structural/precedence/budget issues) at zero false-positive cost
 pair-level jury alone plateaus at ~a third of conflicts *regardless of juror strength*,
 because the bottleneck is candidate formation, not adjudication; the **screen lane**
 attacks exactly that — a strong model nominating pairs from the whole config — which is
-what breaks the ceiling (and is the only configuration that catches the procedural
-skill-ordering conflicts: 4/4 class-lenient). Adversarially-verified false-positive shapes
+what breaks the ceiling (and the only configurations that catch the procedural
+skill-ordering conflicts — 4/4 strict with the `opus` jury). Adversarially-verified false-positive shapes
 from real repos (target-vs-trigger numeric bands, do-X-instead refinements, purpose
 clauses) are encoded as permanent precision gates and regression tests.
 
