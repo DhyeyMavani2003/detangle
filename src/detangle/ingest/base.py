@@ -1,0 +1,242 @@
+"""Shared parser infrastructure: the corpus, discovery context, readers matrix."""
+
+from __future__ import annotations
+
+import fnmatch
+import os
+import re
+import stat
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from ..config import Config
+from ..ir import ConfigFile
+
+# Which tools read which config surfaces. Drives cross-tool co-activation:
+# two files are co-active under tool T only if T reads both. Sources:
+# appendix/07 ecosystem map (verified against primary docs, 2026-08).
+#
+# NOTE: Claude Code does NOT read AGENTS.md (issue #6235 closed unsupported).
+# Zed reads only the FIRST match of its 9-name list — applied as a post-pass.
+
+ZED_SEARCH_ORDER = (
+    ".rules",
+    ".cursorrules",
+    ".windsurfrules",
+    ".clinerules",
+    ".github/copilot-instructions.md",
+    "AGENT.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md",
+)
+
+
+@dataclass
+class Corpus:
+    """Everything discovery produced."""
+
+    root: Path
+    files: list[ConfigFile] = field(default_factory=list)
+    repo_files: set[str] = field(default_factory=set)  # repo-relative posix paths
+    known_commands: set[str] = field(default_factory=set)  # scripts/targets/bins
+    notes: list[str] = field(default_factory=list)
+
+    def add(self, cf: ConfigFile) -> None:
+        self.files.append(cf)
+
+
+def rel(root: Path, p: Path) -> str:
+    return p.relative_to(root).as_posix()
+
+
+_DEFAULT_SKIP_DIRS = {
+    ".git",
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".tox",
+    "dist",
+    "build",
+    ".next",
+    ".cache",
+    "target",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    "site-packages",
+}
+
+
+def _load_gitignore(root: Path) -> tuple[str, ...]:
+    """Top-level .gitignore patterns (negations skipped — precision-first)."""
+    gi = root / ".gitignore"
+    if not gi.is_file():
+        return ()
+    patterns: list[str] = []
+    try:
+        for line in gi.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("!"):
+                continue
+            patterns.append(line)
+    except OSError:
+        return ()
+    return tuple(patterns)
+
+
+def _gitignore_match(pattern: str, path: str) -> bool:
+    """Match one .gitignore pattern, honoring git's leading-slash root anchor.
+
+    glob_match treats bare patterns as match-anywhere (``**/pattern``), but a
+    gitignore pattern that starts with ``/`` is anchored to the repo root, so
+    the any-depth fallback must not apply to it.
+    """
+    from ..globs import glob_match
+
+    if not pattern.startswith("/"):
+        return glob_match(pattern, path)
+    body = pattern.lstrip("/")
+    if not body:
+        return False
+    if "/" in body.rstrip("/"):
+        # An inner slash already suppresses glob_match's any-depth fallback.
+        return glob_match(body, path)
+    # A root-anchored bare name: match the root entry itself, or — since an
+    # ignored directory ignores everything beneath it — any path under a
+    # matching root directory. Never match the same name at deeper levels.
+    name = body.rstrip("/")
+    first, _, rest = path.lstrip("/").partition("/")
+    if not fnmatch.fnmatchcase(first, name):
+        return False
+    return bool(rest) or not body.endswith("/")
+
+
+def walk_repo(
+    root: Path, ignore_globs: tuple[str, ...] = (), respect_gitignore: bool = True
+) -> list[str]:
+    """Repo-relative posix paths of all files, skipping vendored/derived dirs."""
+    gitignore = _load_gitignore(root) if respect_gitignore else ()
+    out: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _DEFAULT_SKIP_DIRS]
+        if gitignore:
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if not any(
+                    _gitignore_match(g, rel(root, Path(dirpath) / d) + "/x") for g in gitignore
+                )
+            ]
+        for fn in filenames:
+            p = Path(dirpath) / fn
+            r = rel(root, p)
+            if any(fnmatch.fnmatch(r, g) for g in ignore_globs):
+                continue
+            if gitignore and any(_gitignore_match(g, r) for g in gitignore):
+                continue
+            out.append(r)
+    return sorted(out)
+
+
+def read_text(path: Path, max_bytes: int = 8 * 1024 * 1024) -> str | None:
+    """Read a config file defensively; None on non-regular/binary/unreadable/oversized.
+
+    Only regular files are opened: a FIFO (or socket/device) named like a
+    config file would otherwise block the scan forever. A UTF-8 BOM is
+    stripped so frontmatter detection still anchors at column 0.
+    """
+    try:
+        st = path.stat()
+        if not stat.S_ISREG(st.st_mode) or st.st_size > max_bytes:
+            return None
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if b"\x00" in data[:4096]:
+        return None
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("utf-8-sig", errors="replace")
+
+
+def discover_known_commands(root: Path, repo_files: set[str]) -> set[str]:
+    """Command names the repo defines ANYWHERE (for DTR05 stale references).
+
+    Aggregated across every package.json / Makefile / justfile in the tree —
+    monorepo instructions routinely say "run X from packages/foo/".
+    """
+    import json
+
+    cmds: set[str] = set()
+    for rp in repo_files:
+        name = rp.rsplit("/", 1)[-1]
+        if name == "package.json":
+            text = read_text(root / rp)
+            if text is None:
+                continue
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            scripts = data.get("scripts", {})
+            if isinstance(scripts, dict):
+                for sname in scripts:
+                    cmds.add(f"npm run {sname}")
+                    cmds.add(f"yarn {sname}")
+                    cmds.add(f"pnpm {sname}")
+                    cmds.add(f"pnpm run {sname}")
+                    cmds.add(f"bun run {sname}")
+        elif name in ("Makefile", "makefile", "GNUmakefile"):
+            text = read_text(root / rp) or ""
+            for m in re.finditer(r"^([A-Za-z0-9_.-]+)\s*:(?!=)", text, re.MULTILINE):
+                cmds.add(f"make {m.group(1)}")
+        elif name in ("justfile", "Justfile", ".justfile"):
+            text = read_text(root / rp) or ""
+            for m in re.finditer(r"^([A-Za-z0-9_-]+)(?:\s+[^:]*)?:(?!=)", text, re.MULTILINE):
+                cmds.add(f"just {m.group(1)}")
+        elif name == "pyproject.toml":
+            text = read_text(root / rp) or ""
+            in_scripts = False
+            for line in text.splitlines():
+                if re.match(r"\[(project\.scripts|tool\.poetry\.scripts)\]", line.strip()):
+                    in_scripts = True
+                    continue
+                if line.strip().startswith("["):
+                    in_scripts = False
+                if in_scripts:
+                    m = re.match(r"([A-Za-z0-9_-]+)\s*=", line.strip())
+                    if m:
+                        cmds.add(m.group(1))
+    return cmds
+
+
+def apply_zed_first_match(corpus: Corpus) -> None:
+    """Zed loads only the first file from its search list at worktree root."""
+    present = [name for name in ZED_SEARCH_ORDER if name in corpus.repo_files]
+    if not present:
+        return
+    winner = present[0]
+    for cf in corpus.files:
+        readers = set(cf.meta.get("readers", ()))
+        if cf.path == winner:
+            readers.add("zed")
+        else:
+            readers.discard("zed")
+        cf.meta["readers"] = tuple(sorted(readers))
+    if len(present) > 1:
+        corpus.notes.append(
+            f"Zed reads only {winner} (first match in its search order); "
+            f"ignored by Zed: {', '.join(present[1:])}"
+        )
+
+
+class BaseParser:
+    """Parser protocol: discover ConfigFiles for one ecosystem."""
+
+    name = "base"
+
+    def parse(self, cfg: Config, corpus: Corpus) -> None:  # pragma: no cover
+        raise NotImplementedError

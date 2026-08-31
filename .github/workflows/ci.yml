@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check src/ tests/ benchmarks/
+      - run: ruff format --check src/ tests/ benchmarks/
+
+  test:
+    name: Tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  selfscan:
+    name: Dogfood (detangle scans its own repo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: detangle scan
+        run: detangle scan . -v
+      - name: Findings summary
+        if: always()
+        run: |
+          echo "## Dogfood self-scan" >> "$GITHUB_STEP_SUMMARY"
+          detangle scan . --format markdown >> "$GITHUB_STEP_SUMMARY" || true
+      - name: SARIF report
+        if: always()
+        run: detangle scan . --format sarif --output detangle.sarif || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: detangle-sarif
+          path: detangle.sarif
+
+  demo-agent:
+    name: Demo agent (baseline triage gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Scan the realistic demo agent against its checked-in baseline
+        # deterministic lane only (no keys in PR CI): fails ONLY on findings
+        # that are new vs the human-triaged baseline — the cheap PR-time gate
+        # of the triage loop (docs/triage.md); the thorough pass runs nightly
+        run: |
+          detangle scan examples/demo-agent --baseline --fail-on-new -v
+      - name: New-findings summary
+        if: always()
+        run: |
+          echo "## Demo agent — only-new view" >> "$GITHUB_STEP_SUMMARY"
+          detangle scan examples/demo-agent --baseline --only-new --format markdown >> "$GITHUB_STEP_SUMMARY" || true
+
+  benchmark:
+    name: Seeded-conflict benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Run benchmark
+        run: python -m benchmarks.run_eval --json bench-results.json
+      - name: Benchmark summary
+        if: always()
+        run: |
+          python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          r = json.load(open("bench-results.json"))
+          m, h = r["mutation_suite"]["totals"], r["holdout"]["totals"]
+          print("## Benchmark (deterministic lane)")
+          print()
+          print("| suite | detected | false positives |")
+          print("|---|---|---|")
+          print(f"| mutation (in-distribution) | {m['detected']}/{m['operator_runs']} | {m['control_false_positives']}/{m['control_runs']} |")
+          print(f"| holdout (novel phrasings) | {h['detected']}/{h['conflict_cases']} ({h['recall']:.0%}) | {h['false_positives']}/{h['benign_cases']} |")
+          print()
+          print("Holdout recall for the LLM lanes is measured via the manual `hybrid-eval` workflow.")
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: bench-results.json

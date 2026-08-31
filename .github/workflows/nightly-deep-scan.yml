@@ -1,0 +1,128 @@
+name: Nightly deep scan
+
+# The thorough half of the triage loop (docs/triage.md): PR CI runs the cheap
+# deterministic baseline gate; this workflow is the "run for hours overnight,
+# human answers in the morning" pass. It scans the demo agent with the deep
+# lanes enabled, refreshes the baseline, and fails only on findings that are
+# new versus the human-triaged baseline — so the morning question is simply
+# "are these new findings real?". Frequency is a repo choice: nightly by
+# default, weekly is fine too — just edit the cron below.
+
+on:
+  schedule:
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+    inputs:
+      deep:
+        description: "Run the deep (LLM) lanes; false = deterministic-only"
+        type: boolean
+        default: true
+      commit_baseline:
+        description: "Commit the refreshed baseline back to the branch"
+        type: boolean
+        default: false
+      target:
+        description: "Path to scan"
+        type: string
+        default: "examples/demo-agent"
+
+permissions:
+  contents: read
+
+jobs:
+  deep-scan:
+    name: Deep scan
+    runs-on: ubuntu-latest
+    # Hours are acceptable by design — the deep lanes are slow and thorough.
+    timeout-minutes: 360
+    env:
+      # Scheduled runs have no inputs, so fall back to the demo agent.
+      TARGET: ${{ inputs.target || 'examples/demo-agent' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[jury]"
+      # Persist the verdict/screen caches between nights: cached verdicts keep
+      # LLM re-runs free AND stable (no re-wording churn in the baseline).
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.TARGET }}/.detangle-cache
+          key: detangle-cache-${{ env.TARGET }}-${{ github.run_id }}
+          restore-keys: |
+            detangle-cache-${{ env.TARGET }}-
+      - name: Deep scan
+        # Needs the ANTHROPIC_API_KEY repository secret for the LLM lanes.
+        # Without it the LLM lanes skip gracefully and the run degrades to the
+        # deterministic lane. The exit code is captured (not raised here) so
+        # the report and refreshed baseline still upload; the last step of the
+        # job re-exits with it so failures surface as the job's conclusion.
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set +e
+          DEEP_FLAG='--deep'
+          if [ "${{ inputs.deep }}" = "false" ]; then
+            DEEP_FLAG=''
+          fi
+          detangle scan "$TARGET" $DEEP_FLAG \
+            --baseline --update-baseline --fail-on-new \
+            --format markdown --output deep-report.md
+          echo "SCAN_EXIT=$?" >> "$GITHUB_ENV"
+      - name: Report to summary
+        if: always()
+        run: |
+          echo "## Nightly deep scan — $TARGET" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Scan exit code: ${SCAN_EXIT:-0} (non-zero = new findings vs baseline)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          cat deep-report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deep-scan-report
+          path: |
+            deep-report.md
+            ${{ env.TARGET }}/.detangle-baseline.json
+          # v4 excludes dotfiles by default — without this the refreshed
+          # baseline never leaves the job and commit-baseline would no-op
+          include-hidden-files: true
+          if-no-files-found: warn
+      - name: Surface scan result
+        if: always()
+        run: exit "${SCAN_EXIT:-0}"
+
+  commit-baseline:
+    name: Commit refreshed baseline
+    needs: deep-scan
+    # Runs even when the scan failed on new findings (that refreshed baseline
+    # is exactly what a human may want to accept) — but only on an explicit
+    # dispatch with commit_baseline enabled, never on the schedule.
+    if: ${{ !cancelled() && inputs.commit_baseline }}
+    runs-on: ubuntu-latest
+    # Elevate to write ONLY here — the scan job keeps the read-only token.
+    permissions:
+      contents: write
+    env:
+      TARGET: ${{ inputs.target || 'examples/demo-agent' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: deep-scan-report
+          path: .
+      - name: Commit baseline if changed
+        # This is an automated triage bookkeeping commit — a human should
+        # still review the diff (new entries mean new accepted-or-open
+        # findings) before trusting the refreshed baseline.
+        run: |
+          if git diff --quiet -- "$TARGET/.detangle-baseline.json"; then
+            echo "Baseline unchanged — nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$TARGET/.detangle-baseline.json"
+          git commit -m "chore: refresh detangle baseline [skip ci]"
+          git push

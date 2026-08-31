@@ -1,0 +1,2907 @@
+{
+  "version": 1,
+  "tool": "detangle",
+  "entries": [
+    {
+      "fingerprint": "DTC01:01bd1843579e",
+      "pair_key": "241df7d8cd8a+bfcc2318a178",
+      "code": "DTC01",
+      "status": "open",
+      "note": "planted C2: lint/test order — CLAUDE.md vs pre-commit skill",
+      "message": "Jury verdict CONTRADICTORY (process): A fixes lint as the first step of the sequence; B requires lint to run last. Both are hard obligations, jointly unsatisfiable whenever the skill runs.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Everyday changes: edit, then invoke the pre-commit skill as the last step before any commit; it lints first, then typechecks, then runs the unit suite.",
+        "Run pnpm lint last — lint sees the final shape of the code, so nothing sneaks in after formatting."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC01:4e22c44dd528",
+      "pair_key": "71c94aad622c+f9edb4440a8a",
+      "code": "DTC01",
+      "status": "open",
+      "note": "planted C1: changelog-before-release — CLAUDE.md vs release skill",
+      "message": "Jury verdict CONTRADICTORY (temporal): A hard-forbids generating release notes before the changelog; B prescribes exactly that order, deriving notes from PR titles and backfilling CHANGELOG.md afterward.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/release/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Shipping: run the changelog skill before the release skill so the release notes are assembled from an up-to-date CHANGELOG.md, never the other way around.",
+        "Write the release notes first, straight from the merged PR titles since the last tag; backfill CHANGELOG.md at the very end, once the tag exists, so the changelog can cite the final tag name."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC01:8af7f3dad6ad",
+      "pair_key": "19266c33c9bc+88d1dc2cfd2f",
+      "code": "DTC01",
+      "status": "open",
+      "note": "planted C3: migrate-before-deploy — CLAUDE.md vs deploy skill",
+      "message": "Jury verdict CONTRADICTORY (temporal): A requires migrations complete before deploy starts; B requires migrations to happen after canary, mid-deploy. Same event ordered oppositely relative to deploy.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Schema changes: run the db-migrate skill to completion before starting the deploy skill.",
+        "Apply any pending database migrations once the canary reports healthy; migrating after the canary keeps a bad migration away from the full fleet."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:05e720239f0d",
+      "pair_key": "58d7e261ff1e+d6e25bed9fd6",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): A requires a green suite before landing; B forbids rerunning flaky tests until green, instead quarantining/flagging them—leaving no compliant path to a green suite for flaky cases.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "AGENTS.md"
+      ],
+      "quotes": [
+        "Land nothing until pnpm test is green; CI runs the same suite and will block the merge otherwise.",
+        "Flaky tests belong in the quarantine list, not in a retry loop; flag them in the PR rather than rerunning until green."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:08002ebe186c",
+      "pair_key": "31925731d33c+f9edb4440a8a",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/changelog/SKILL.md",
+        ".claude/skills/release/SKILL.md"
+      ],
+      "quotes": [
+        "Write the release notes first, straight from the merged PR titles since the last tag; backfill CHANGELOG.md at the very end, once the tag exists, so the changelog can cite the final tag name.",
+        "Keeps CHANGELOG.md honest: every user-facing change that merged since the last tag gets an entry a customer could read."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:0dbc27ea286a",
+      "pair_key": "19266c33c9bc+347f66c671a7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Schema changes: run the db-migrate skill to completion before starting the deploy skill.",
+        "Never run destructive commands against the staging or production databases; migrations reach those environments only through the deploy pipeline."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:0e1f13c8789a",
+      "pair_key": "218d9c21a91a+9f8a8b63aed7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONTRADICTORY)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/deploy/SKILL.md"
+      ],
+      "quotes": [
+        "Roll the build out to the canary fleet first, before anything else in the fleet changes.",
+        "Promote the build to the rest of production, then refresh the staging mirror so staging tracks what customers run."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:0f0fc56a2e98",
+      "pair_key": "0681cc97f32f+9f8a8b63aed7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/deploy/SKILL.md"
+      ],
+      "quotes": [
+        "Let the canary bake for at least 30 minutes with error rates and latency up on the dashboard next to the previous version's baseline.",
+        "Promote the build to the rest of production, then refresh the staging mirror so staging tracks what customers run."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:1172748bc592",
+      "pair_key": "88d1dc2cfd2f+f850a396db97",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "A deploy with pending migrations is a paging incident waiting to happen.",
+        "Apply any pending database migrations once the canary reports healthy; migrating after the canary keeps a bad migration away from the full fleet."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:12bea61b95ad",
+      "pair_key": "347f66c671a7+8f2ccfa73fda",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): B obliges routing schema changes through the skill; A forbids destructive DB commands outside the pipeline. If the skill itself runs destructive commands directly against staging/prod, they conflict.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never run destructive commands against the staging or production databases; migrations reach those environments only through the deploy pipeline.",
+        "Every schema change flows through here."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:1904a258322e",
+      "pair_key": "13845f7586a1+2cef40797056",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        ".claude/skills/release/SKILL.md"
+      ],
+      "quotes": [
+        "No drive-by refactors, no dependency bumps, nothing the incident does not require.",
+        "Run pnpm changeset version to bump package versions from the pending changesets, and sanity-check the resulting bumps against what actually merged this week."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:1a2eb77738c0",
+      "pair_key": "614b84d8ddb8+9f8a8b63aed7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): A prescribes a direct full-production promotion plus staging refresh; B prescribes routing every release, including hotfixes, through the canary pipeline like normal — different rollout mechanisms for the same deploy action.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Promote the build to the rest of production, then refresh the staging mirror so staging tracks what customers run.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:1c7176a9c9ad",
+      "pair_key": "5682ebb61baf+88d341da4eb9",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        ".claude/skills/release/SKILL.md"
+      ],
+      "quotes": [
+        "Column drops wait one full release after the code stops reading the column.",
+        "Publish the packages, then hand off to the deploy skill for the production rollout."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:1df05851344a",
+      "pair_key": "602b556f1dda+943fc05fe5f9",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Keep pull requests small — aim for under 200 changed lines; the hard cap is 400 lines of diff per PR.",
+        "If a shared branch truly needs rewriting, delete it and re-cut it from main."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:1fa6e7554422",
+      "pair_key": "347f66c671a7+f3864da513de",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/release/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never run destructive commands against the staging or production databases; migrations reach those environments only through the deploy pipeline.",
+        "Runs the weekly release train end to end."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:20b3920676c0",
+      "pair_key": "19266c33c9bc+72261a172f93",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): A orders migration before deploy; B's tag push triggers build/deploy independently, potentially bypassing A's sequencing if tagging counts as starting deploy.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/release/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Schema changes: run the db-migrate skill to completion before starting the deploy skill.",
+        "Tag the release and push the tag to origin; the tag triggers the package build."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:219d79553344",
+      "pair_key": "2076c74e4e7d+614b84d8ddb8",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): B's pipeline rollout may require modifying .github workflow/config files, which A requires asking permission for first; not guaranteed but plausible overlap.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Ask before deleting files you did not create or touching anything under .github.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:2521e1f5db25",
+      "pair_key": "2cef40797056+f10055590e6d",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): Hotfix scope discipline can conflict with the coverage floor when a minimal incident fix drops coverage, forcing either scope creep or a blocked merge.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "No drive-by refactors, no dependency bumps, nothing the incident does not require.",
+        "Keep branch coverage at or above 80% — the coverage gate blocks merges under the floor."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:25b95a087a75",
+      "pair_key": "f3864da513de+f850a396db97",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/release/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "A deploy with pending migrations is a paging incident waiting to happen.",
+        "Runs the weekly release train end to end."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:289de7bde60f",
+      "pair_key": "286fc95b443a+eee1d3b8c16c",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs REDUNDANT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run scripts/verify-all.sh before you push; it chains lint, typecheck, and the unit suite in the exact order CI uses.",
+        "Run pnpm typecheck next; fix type errors at the source rather than papering over them with casts or @ts-expect-error."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:28ad2b32a7d6",
+      "pair_key": "71b12dcbe792+943fc05fe5f9",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "If a shared branch truly needs rewriting, delete it and re-cut it from main.",
+        "Every change lands through a pull request; main is protected and squash-merged."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:31c63d463b6d",
+      "pair_key": "2cef40797056+96f9325fbc58",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): A mandates regenerating client/types after any migration; B forbids any change beyond what the incident strictly requires, which could exclude that regeneration during a hotfix.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Regenerate the client and the OpenAPI types with pnpm generate so the compiled API matches the new schema.",
+        "No drive-by refactors, no dependency bumps, nothing the incident does not require."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:32447eed6124",
+      "pair_key": "081139a86feb+943fc05fe5f9",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (evidence not found in source).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/code-review/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "If a shared branch truly needs rewriting, delete it and re-cut it from main.",
+        "The summary at the top of the PR description must be formatted strictly as prose — reviewers need the narrative in one place before scanning the diff."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:33be7b19b189",
+      "pair_key": "099283392fe2+9f8a8b63aed7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (unsatisfiable_constraint): A unconditionally obliges promotion; B obliges halting promotion when canary regresses. Jointly unsatisfiable only under B's regression condition.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/deploy/SKILL.md"
+      ],
+      "quotes": [
+        "Promote the build to the rest of production, then refresh the staging mirror so staging tracks what customers run.",
+        "If the canary shows a regression, halt promotion and page the release owner rather than pushing through."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:37d487f7fc40",
+      "pair_key": "614b84d8ddb8+f850a396db97",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): The hotfix skill mandates a normal-release rollout regardless of migration state, while CLAUDE.md treats deploying with pending migrations as hazardous; not always true but conflicts when migrations are pending.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "A deploy with pending migrations is a paging incident waiting to happen.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:381e61e26412",
+      "pair_key": "40408dc11430+6f9a4a4caffa",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (specificity): A forbids stating why (rationale) in changelog entries; B requires readers know 'why' on release pages. If release pages reuse changelog text verbatim, satisfying both is impossible.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/changelog/SKILL.md",
+        ".claude/skills/release/SKILL.md"
+      ],
+      "quotes": [
+        "Do not editorialize: an entry states what changed, not why the old behavior was bad.",
+        "Anyone on the team should be able to read the resulting release page and know what shipped and why."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:394d52082f1d",
+      "pair_key": "25454c884bfe+eb58c95a53b2",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (REDUNDANT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        ".claude/skills/pre-commit/SKILL.md"
+      ],
+      "quotes": [
+        "Run the API test suite against the migrated database, including the integration suites that exercise real queries.",
+        "This is the same canonical suite that pnpm test refers to; the extra flags just add the coverage report the merge gate reads."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:39d7d16bd582",
+      "pair_key": "25454c884bfe+7afa41e26e68",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (REDUNDANT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Postgres through Prisma, vitest for unit tests, Playwright for end-to-end, changesets for versioning.",
+        "This is the same canonical suite that pnpm test refers to; the extra flags just add the coverage report the merge gate reads."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:3ac0777c9be9",
+      "pair_key": "286fc95b443a+70eea8c4575c",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run scripts/verify-all.sh before you push; it chains lint, typecheck, and the unit suite in the exact order CI uses.",
+        "Run pnpm run test:unit --coverage before opening a pull request and make sure the suite passes clean."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:3cf77f7318ef",
+      "pair_key": "020b40d77d37+eb58c95a53b2",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run the API test suite against the migrated database, including the integration suites that exercise real queries.",
+        "Keep the vitest per-test timeout at 30 seconds; a unit test that needs longer is doing too much."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:3d4dde0703ca",
+      "pair_key": "614b84d8ddb8+e09f9107294b",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "For P0 and P1 incidents only.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:408bba99cfac",
+      "pair_key": "347f66c671a7+eb58c95a53b2",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never run destructive commands against the staging or production databases; migrations reach those environments only through the deploy pipeline.",
+        "Run the API test suite against the migrated database, including the integration suites that exercise real queries."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:41210ce32f7e",
+      "pair_key": "2076c74e4e7d+b408b00fc9e5",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Ask before deleting files you did not create or touching anything under .github.",
+        "Cherry-pick or write the minimal fix."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:416f6da0c92b",
+      "pair_key": "602b556f1dda+614b84d8ddb8",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Keep pull requests small — aim for under 200 changed lines; the hard cap is 400 lines of diff per PR.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:467b9b88cc4a",
+      "pair_key": "241df7d8cd8a+70eea8c4575c",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs REDUNDANT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Everyday changes: edit, then invoke the pre-commit skill as the last step before any commit; it lints first, then typechecks, then runs the unit suite.",
+        "Run pnpm run test:unit --coverage before opening a pull request and make sure the suite passes clean."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:47a532a9d1d8",
+      "pair_key": "217d170844c4+2cef40797056",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "AGENTS.md"
+      ],
+      "quotes": [
+        "No drive-by refactors, no dependency bumps, nothing the incident does not require.",
+        "Changesets drive versioning: user-facing changes need a changeset file in the PR."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:49c7dc2110f2",
+      "pair_key": "2076c74e4e7d+96bf680d587c",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Ask before deleting files you did not create or touching anything under .github.",
+        "If the regenerated client drifts from what the API build expects, it's fine to edit files under src/generated/ to patch the enum casing by hand; call the hand edit out in the PR so the generator bug g"
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:5433c62e5d0d",
+      "pair_key": "22d03c2e862f+c4391a868188",
+      "code": "DTC02",
+      "status": "open",
+      "note": "planted C14: shared/** import-order shadow (frontend vs backend rules)",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (specificity): For shared/** files, backend.md mandates grouped-then-alphabetized imports while frontend.md mandates one flat alphabetized block; both are hard obligations, mutually exclusive for the same file.",
+      "severity": "advisory",
+      "files": [
+        ".claude/rules/backend.md",
+        ".claude/rules/frontend.md"
+      ],
+      "quotes": [
+        "Group import statements by layer — node builtins, then external packages, then internal modules — and alphabetize within each group; the shared packages follow this grouped order as well.",
+        "Sort import statements alphabetically in one flat block; the shared packages follow the same flat ordering, so a file moved between apps/web and shared needs no import shuffle."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:550b6214d062",
+      "pair_key": "3656001623ad+ebf04b34885a",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Check the migration and the regenerated client into the same PR; CI replays the migration against a scratch database.",
+        "Never edit files under src/generated/ — the Prisma client and the OpenAPI types there are rebuilt on every build, and hand edits are silently lost."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:58f4afba05fc",
+      "pair_key": "5682ebb61baf+614b84d8ddb8",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (temporal): Hotfix skill mandates standard release process with no exception for pending column drops; db-migrate mandates a release-delay gate. Only conflicts if a hotfix bundles a column drop.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Column drops wait one full release after the code stops reading the column.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:5948fd6620ab",
+      "pair_key": "59cc766c42b3+f9edb4440a8a",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/changelog/SKILL.md",
+        ".claude/skills/release/SKILL.md"
+      ],
+      "quotes": [
+        "Collect the changesets merged since the last release tag, plus any merged PRs labeled user-facing that forgot a changeset.",
+        "Write the release notes first, straight from the merged PR titles since the last tag; backfill CHANGELOG.md at the very end, once the tag exists, so the changelog can cite the final tag name."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:61e0868414c7",
+      "pair_key": "2bdff1183575+b5d63921ee00",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (specificity): A permits adding dependencies when needed; B requires the hotfix diff stay exactly the incident fix, which a dependency addition would violate.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "You may add workspace dependencies with pnpm add when a task needs them; call new dependencies out in the PR description.",
+        "Keep the branch rebased on the production tag while the fix is in review, so the diff stays exactly the incident fix."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:620862230c31",
+      "pair_key": "437fc19c8f40+b5d63921ee00",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): A caps reviewable diff size and demands splitting; B mandates the hotfix diff stay exactly the incident fix, not split into pieces. Both are individually satisfiable but jointly conflict only if the fix itself exceeds 800 lines.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/code-review/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Treat 800 lines as the outer bound for a single review pass; if a diff runs past that, ask the author to split it before you review.",
+        "Keep the branch rebased on the production tag while the fix is in review, so the diff stays exactly the incident fix."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:62166167fd30",
+      "pair_key": "218d9c21a91a+614b84d8ddb8",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs REDUNDANT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Roll the build out to the canary fleet first, before anything else in the fleet changes.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:6338283e6552",
+      "pair_key": "71b12dcbe792+953b88d1dddd",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "AGENTS.md"
+      ],
+      "quotes": [
+        "Branch from the latest production tag, not from main; the fix must ship on what customers are running.",
+        "Every change lands through a pull request; main is protected and squash-merged."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:64baf1721783",
+      "pair_key": "88d341da4eb9+b5d63921ee00",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        ".claude/skills/release/SKILL.md"
+      ],
+      "quotes": [
+        "Keep the branch rebased on the production tag while the fix is in review, so the diff stays exactly the incident fix.",
+        "Publish the packages, then hand off to the deploy skill for the production rollout."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:671229cfc589",
+      "pair_key": "19266c33c9bc+614b84d8ddb8",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): Hotfix skill instructs proceeding straight to release steps without mentioning migration gating; if schema changes are involved, deploy could start before db-migrate completes.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Schema changes: run the db-migrate skill to completion before starting the deploy skill.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:6812c2f50ee2",
+      "pair_key": "347f66c671a7+9f8a8b63aed7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): Instruction B could be satisfied via the deploy pipeline (compliant) or via direct destructive commands (violates A); overlap only arises if execution method is ambiguous.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never run destructive commands against the staging or production databases; migrations reach those environments only through the deploy pipeline.",
+        "Promote the build to the rest of production, then refresh the staging mirror so staging tracks what customers run."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:6c6d06b20345",
+      "pair_key": "7ce5e97f2984+b5d63921ee00",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/code-review/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Check that new API routes carry input validation and an authz check before anything else.",
+        "Keep the branch rebased on the production tag while the fix is in review, so the diff stays exactly the incident fix."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:6d89262c376f",
+      "pair_key": "602b556f1dda+71b12dcbe792",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Keep pull requests small — aim for under 200 changed lines; the hard cap is 400 lines of diff per PR.",
+        "Every change lands through a pull request; main is protected and squash-merged."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:6ddfde331b38",
+      "pair_key": "614b84d8ddb8+f3864da513de",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        ".claude/skills/release/SKILL.md"
+      ],
+      "quotes": [
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release.",
+        "Runs the weekly release train end to end."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:6ee2bcf82fa3",
+      "pair_key": "347f66c671a7+d69390eef5bc",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never run destructive commands against the staging or production databases; migrations reach those environments only through the deploy pipeline.",
+        "Edit the schema in the prisma workspace package, then run pnpm db:migrate to create and apply the migration against your local database."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:726af9753e06",
+      "pair_key": "19266c33c9bc+f850a396db97",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (REDUNDANT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "A deploy with pending migrations is a paging incident waiting to happen.",
+        "Schema changes: run the db-migrate skill to completion before starting the deploy skill."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:75572d3bddfd",
+      "pair_key": "19266c33c9bc+f3864da513de",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): B implies an unbroken end-to-end run of the release train, while A requires inserting/sequencing db-migrate before deploy whenever schema changes exist, potentially interrupting B's 'end to end' execution.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/release/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Schema changes: run the db-migrate skill to completion before starting the deploy skill.",
+        "Runs the weekly release train end to end."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:76b65b5c0d2f",
+      "pair_key": "943fc05fe5f9+9f512a5e2c04",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): Both prescribe hard-required but mutually exclusive ways to publish a rewritten shared branch: delete-and-recreate vs. force-push the rebase, with no declared precedence between memory and skill layers.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "If a shared branch truly needs rewriting, delete it and re-cut it from main.",
+        "Force-push the branch after each rebase; a force-push is required here because the rebase rewrites every commit on the branch."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:78b1839c3868",
+      "pair_key": "081139a86feb+7cfc68e540ea",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/code-review/SKILL.md"
+      ],
+      "quotes": [
+        "Lead with anything that would block the merge, then style points, clearly separated so the author can triage.",
+        "The summary at the top of the PR description must be formatted strictly as prose — reviewers need the narrative in one place before scanning the diff."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:7c1542971427",
+      "pair_key": "026de7d02cc1+96bf680d587c",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): A permits an immediate hand-edit shortcut for generated-client drift; B obliges all non-hotfix work, including tempting shortcuts, to wait for the weekly train.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "If the regenerated client drifts from what the API build expects, it's fine to edit files under src/generated/ to patch the enum casing by hand; call the hand edit out in the PR so the generator bug g",
+        "Everything else rides the weekly train, no matter how tempting the shortcut looks."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:7cdc5b5b0055",
+      "pair_key": "614b84d8ddb8+a902e19ce36d",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        ".claude/skills/release/SKILL.md"
+      ],
+      "quotes": [
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release.",
+        "Confirm the working tree is clean and CI is green on main before touching anything."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:8ae4befa7bc6",
+      "pair_key": "769da412ea9d+cec35cd70aec",
+      "code": "DTC02",
+      "status": "open",
+      "note": "planted C4: imperative vs past-tense commit subjects",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (specificity): A mandates imperative mood for all commit subjects always; B mandates past tense for the changelog commit specifically. Both hard-oblige, same artifact, incompatible grammatical mood.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/changelog/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Write commit subjects in the imperative mood (\"add board filters\", not \"added board filters\") and keep them at most 72 characters.",
+        "Write the commit subject for the regenerated changelog in the past tense as well (\"Updated changelog for the June train\") so it matches the entry headings."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:96290ccce101",
+      "pair_key": "58d7e261ff1e+8afb5840f5b8",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): A demands rerunning until green pre-review; B forbids rerunning flaky tests until green and requires flagging instead, jointly unsatisfiable for a flaky new spec.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "New Playwright specs go next to the flow they cover and must run green locally before review.",
+        "Flaky tests belong in the quarantine list, not in a retry loop; flag them in the PR rather than rerunning until green."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:96bbd579a43d",
+      "pair_key": "19ad220241e2+2cef40797056",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (specificity): Hotfix skill restricts changes to only what the incident requires; code-review skill demands regression tests for behavior changes, which may exceed the incident's minimal scope.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/code-review/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "No drive-by refactors, no dependency bumps, nothing the incident does not require.",
+        "Review the tests alongside the code they cover; a behavior change without a regression test is an incomplete change."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:97375fc3ec82",
+      "pair_key": "19266c33c9bc+8f2ccfa73fda",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs REDUNDANT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Schema changes: run the db-migrate skill to completion before starting the deploy skill.",
+        "Every schema change flows through here."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:9757f0a6b44f",
+      "pair_key": "943fc05fe5f9+b408b00fc9e5",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): A mandates deleting/recreating the branch when rewriting is needed; B mandates a minimal non-destructive fix, never branch deletion, for the hotfix scenario.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "If a shared branch truly needs rewriting, delete it and re-cut it from main.",
+        "Cherry-pick or write the minimal fix."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:9e580398d76f",
+      "pair_key": "026de7d02cc1+614b84d8ddb8",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONTRADICTORY vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Everything else rides the weekly train, no matter how tempting the shortcut looks.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:a21df8aa5b37",
+      "pair_key": "88d1dc2cfd2f+f7fce367dbc7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Emergencies: the hotfix skill is for P0/P1 incidents only; everything else rides the weekly release train.",
+        "Apply any pending database migrations once the canary reports healthy; migrating after the canary keeps a bad migration away from the full fleet."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:a419ec52cd23",
+      "pair_key": "943fc05fe5f9+b5d63921ee00",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): A mandates deleting and re-cutting a shared branch needing rewrite; B mandates keeping the same hotfix branch rebased in place during review, so both can't be followed for that branch.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "If a shared branch truly needs rewriting, delete it and re-cut it from main.",
+        "Keep the branch rebased on the production tag while the fix is in review, so the diff stays exactly the incident fix."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:a492e42e3dbf",
+      "pair_key": "f7fce367dbc7+f850a396db97",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "A deploy with pending migrations is a paging incident waiting to happen.",
+        "Emergencies: the hotfix skill is for P0/P1 incidents only; everything else rides the weekly release train."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:a4a91d25e2bb",
+      "pair_key": "2f5cc50cb9d2+eee1d3b8c16c",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (REDUNDANT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "TypeScript strict mode everywhere; no any outside test helpers.",
+        "Run pnpm typecheck next; fix type errors at the source rather than papering over them with casts or @ts-expect-error."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:ab1e5afda488",
+      "pair_key": "614b84d8ddb8+f7fce367dbc7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Emergencies: the hotfix skill is for P0/P1 incidents only; everything else rides the weekly release train.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:abc60dccd75b",
+      "pair_key": "9f512a5e2c04+e09f9107294b",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "For P0 and P1 incidents only.",
+        "Force-push the branch after each rebase; a force-push is required here because the rebase rewrites every commit on the branch."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:b551591dac6e",
+      "pair_key": "614b84d8ddb8+f10055590e6d",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Keep branch coverage at or above 80% — the coverage gate blocks merges under the floor.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:b91f85638cc6",
+      "pair_key": "2076c74e4e7d+943fc05fe5f9",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Ask before deleting files you did not create or touching anything under .github.",
+        "If a shared branch truly needs rewriting, delete it and re-cut it from main."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:ba769f621639",
+      "pair_key": "2cef40797056+eee1d3b8c16c",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (specificity): A forbids unrelated changes beyond the incident's needs; B mandates fixing type errors at the source, which could require unrelated edits during a hotfix.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        ".claude/skills/pre-commit/SKILL.md"
+      ],
+      "quotes": [
+        "No drive-by refactors, no dependency bumps, nothing the incident does not require.",
+        "Run pnpm typecheck next; fix type errors at the source rather than papering over them with casts or @ts-expect-error."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:bbb1a2a22002",
+      "pair_key": "099283392fe2+614b84d8ddb8",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): B mandates a full normal-release canary rollout with no exception carved out for regressions; A mandates halting on regression. Both are hard obligations from co-triggerable skills.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "If the canary shows a regression, halt promotion and page the release owner rather than pushing through.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:bddfb4f4e1c4",
+      "pair_key": "437fc19c8f40+614b84d8ddb8",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/code-review/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Treat 800 lines as the outer bound for a single review pass; if a diff runs past that, ask the author to split it before you review.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:c18f306aea3f",
+      "pair_key": "88d341da4eb9+f7fce367dbc7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/release/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Emergencies: the hotfix skill is for P0/P1 incidents only; everything else rides the weekly release train.",
+        "Publish the packages, then hand off to the deploy skill for the production rollout."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:c2afd82ff493",
+      "pair_key": "58d7e261ff1e+bd2936345173",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (REDUNDANT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "See docs/testing.md for the flake quarantine process and for what counts as an integration test.",
+        "Flaky tests belong in the quarantine list, not in a retry loop; flag them in the PR rather than rerunning until green."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:c6ff2ef88908",
+      "pair_key": "19266c33c9bc+5682ebb61baf",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Schema changes: run the db-migrate skill to completion before starting the deploy skill.",
+        "Column drops wait one full release after the code stops reading the column."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:c7117a4e963f",
+      "pair_key": "2bdff1183575+2cef40797056",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "You may add workspace dependencies with pnpm add when a task needs them; call new dependencies out in the PR description.",
+        "No drive-by refactors, no dependency bumps, nothing the incident does not require."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:d75673c55c71",
+      "pair_key": "241df7d8cd8a+71b12dcbe792",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Everyday changes: edit, then invoke the pre-commit skill as the last step before any commit; it lints first, then typechecks, then runs the unit suite.",
+        "Every change lands through a pull request; main is protected and squash-merged."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:d7f77a0c0423",
+      "pair_key": "3656001623ad+b408b00fc9e5",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (specificity): Both are individually satisfiable; they only clash if the minimal hotfix would require editing a generated file, which is a narrow but real overlap.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never edit files under src/generated/ — the Prisma client and the OpenAPI types there are rebuilt on every build, and hand edits are silently lost.",
+        "Cherry-pick or write the minimal fix."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:d99ae5d33ba3",
+      "pair_key": "614b84d8ddb8+9b062186738f",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/changelog/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Open a PR with the regenerated file rather than pushing the changelog straight to main; the release owner reviews the wording.",
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:dae69aed0c86",
+      "pair_key": "347f66c671a7+f7fce367dbc7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Emergencies: the hotfix skill is for P0/P1 incidents only; everything else rides the weekly release train.",
+        "Never run destructive commands against the staging or production databases; migrations reach those environments only through the deploy pipeline."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:defd6bff703e",
+      "pair_key": "286fc95b443a+bfcc2318a178",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run scripts/verify-all.sh before you push; it chains lint, typecheck, and the unit suite in the exact order CI uses.",
+        "Run pnpm lint last — lint sees the final shape of the code, so nothing sneaks in after formatting."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:df889affa8d2",
+      "pair_key": "241df7d8cd8a+286fc95b443a",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs REDUNDANT)).",
+      "severity": "info",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run scripts/verify-all.sh before you push; it chains lint, typecheck, and the unit suite in the exact order CI uses.",
+        "Everyday changes: edit, then invoke the pre-commit skill as the last step before any commit; it lints first, then typechecks, then runs the unit suite."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:e009d8d8102f",
+      "pair_key": "b028ee1a362f+e09f9107294b",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Never start a production deploy on a Friday unless a P0 incident is open.",
+        "For P0 and P1 incidents only."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:e1f19aa007ab",
+      "pair_key": "9f8a8b63aed7+f7fce367dbc7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Emergencies: the hotfix skill is for P0/P1 incidents only; everything else rides the weekly release train.",
+        "Promote the build to the rest of production, then refresh the staging mirror so staging tracks what customers run."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:e53f4a5628e4",
+      "pair_key": "01523b47c3fc+58d7e261ff1e",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): B demands a clean passing suite before PR; A forbids rerunning flaky failures until green, requiring flagging instead—jointly unsatisfiable when flakiness occurs.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Flaky tests belong in the quarantine list, not in a retry loop; flag them in the PR rather than rerunning until green.",
+        "Run pnpm test before opening a pull request and make sure the suite passes clean."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:e9a88f6de637",
+      "pair_key": "88d1dc2cfd2f+b028ee1a362f",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/deploy/SKILL.md"
+      ],
+      "quotes": [
+        "Apply any pending database migrations once the canary reports healthy; migrating after the canary keeps a bad migration away from the full fleet.",
+        "Never start a production deploy on a Friday unless a P0 incident is open."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:f03841024478",
+      "pair_key": "f3864da513de+f7fce367dbc7",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs REDUNDANT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/release/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Emergencies: the hotfix skill is for P0/P1 incidents only; everything else rides the weekly release train.",
+        "Runs the weekly release train end to end."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:f33f89c2cff9",
+      "pair_key": "72261a172f93+d714e2a45346",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/release/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never force-push.",
+        "Tag the release and push the tag to origin; the tag triggers the package build."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:f68b8ed1cfd0",
+      "pair_key": "217d170844c4+b5d63921ee00",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "AGENTS.md"
+      ],
+      "quotes": [
+        "Keep the branch rebased on the production tag while the fix is in review, so the diff stays exactly the incident fix.",
+        "Changesets drive versioning: user-facing changes need a changeset file in the PR."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:ff4783a0402c",
+      "pair_key": "2cef40797056+96bf680d587c",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (CONDITIONAL_CONFLICT vs DISTINCT)).",
+      "severity": "info",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "If the regenerated client drifts from what the API build expects, it's fine to edit files under src/generated/ to patch the enum casing by hand; call the hand edit out in the PR so the generator bug g",
+        "No drive-by refactors, no dependency bumps, nothing the incident does not require."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC02:ffb216d3cb77",
+      "pair_key": "19266c33c9bc+88d341da4eb9",
+      "code": "DTC02",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (process): Both are hard obligations about when to invoke the deploy skill; A says go straight to deploy, B requires an intervening migration step first when schema changes exist.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/release/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Publish the packages, then hand off to the deploy skill for the production rollout.",
+        "Schema changes: run the db-migrate skill to completion before starting the deploy skill."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC03:141bb467cb82",
+      "pair_key": "437fc19c8f40+602b556f1dda",
+      "code": "DTC03",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Numeric constraints disagree: '400 lines' and '800 lines' cannot both hold (ranges do not intersect).",
+      "severity": "error",
+      "files": [
+        ".claude/skills/code-review/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Keep pull requests small — aim for under 200 changed lines; the hard cap is 400 lines of diff per PR.",
+        "Treat 800 lines as the outer bound for a single review pass; if a diff runs past that, ask the author to split it before you review."
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC03:2fb517d20daf",
+      "pair_key": "020b40d77d37+a253500619d4",
+      "code": "DTC03",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Numeric constraints disagree: '30 seconds' and 'at least 120 seconds' cannot both hold (ranges do not intersect).",
+      "severity": "error",
+      "files": [
+        ".claude/rules/backend.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Keep the vitest per-test timeout at 30 seconds; a unit test that needs longer is doing too much.",
+        "Set the vitest timeout to at least 120 seconds for the integration suites; they talk to a real Postgres container and legitimately take up to two minutes."
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC03:687d7585718b",
+      "pair_key": "19ad220241e2+602b556f1dda",
+      "code": "DTC03",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (numeric): Both are hard obligations that can jointly bind: a behavior change large enough that adding tests exceeds the 400-line cap forces a choice between shrinking scope and full test coverage.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/code-review/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Keep pull requests small — aim for under 200 changed lines; the hard cap is 400 lines of diff per PR.",
+        "Review the tests alongside the code they cover; a behavior change without a regression test is an incomplete change."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC03:ca82139eb300",
+      "pair_key": "0681cc97f32f+a1fce04bab68",
+      "code": "DTC03",
+      "status": "open",
+      "note": "emergent: deploy and hotfix skills disagree on canary bake minimums",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (numeric): Both hard-oblige a minimum bake/watch duration for the same canary action but specify different minimums (30 min vs 10 min); no arbitration exists between co-triggering skills.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Let the canary bake for at least 30 minutes with error rates and latency up on the dashboard next to the previous version's baseline.",
+        "Watch the canary for at least 10 minutes with the incident dashboard open; a hotfix trades bake time for speed, so the watching is on you."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC03:d394c0c1857e",
+      "pair_key": "602b556f1dda+6d9b2f923e98",
+      "code": "DTC03",
+      "status": "open",
+      "note": "emergent soft tension: loading/error-state completeness rule vs the 400-line PR cap can jointly bind on large features",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (numeric): Both are hard obligations that can jointly become unsatisfiable when full loading/error-state coverage requires exceeding the 400-line diff cap.",
+      "severity": "advisory",
+      "files": [
+        ".claude/rules/frontend.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Loading and error states are part of the feature, not a follow-up; a spinner-only PR is not done.",
+        "Keep pull requests small — aim for under 200 changed lines; the hard cap is 400 lines of diff per PR."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC03:e02f9043b645",
+      "pair_key": "602b556f1dda+ebf04b34885a",
+      "code": "DTC03",
+      "status": "accepted",
+      "note": "jury maybe-verdict (advisory tier); bulk triage 2026-08-31 — adjacent prescriptions, judged not jointly unsatisfiable",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (numeric): Bundling a migration with its regenerated client can push diffs past the 400-line hard cap, but often won't; conflict only arises when the combined change is large.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Keep pull requests small — aim for under 200 changed lines; the hard cap is 400 lines of diff per PR.",
+        "Check the migration and the regenerated client into the same PR; CI replays the migration against a scratch database."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTC04:3613f0cd6501",
+      "pair_key": "081139a86feb+222c05024075",
+      "code": "DTC04",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Exclusive output-format constraints collide: one requires 'bullet points'-only output, the other 'prose' (list vs prose).",
+      "severity": "error",
+      "files": [
+        ".claude/skills/code-review/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Always write PR descriptions as bullet points only — one bullet per meaningful change, with a link to the Linear issue in the first bullet.",
+        "The summary at the top of the PR description must be formatted strictly as prose — reviewers need the narrative in one place before scanning the diff."
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP03:f25fa2fc11cc",
+      "pair_key": "614b84d8ddb8+b028ee1a362f",
+      "code": "DTP03",
+      "status": "open",
+      "note": "emergent: hotfix mandates unconditional rollout; deploy freezes Fridays (hotfix body lacks the P0 carve-out)",
+      "message": "Jury verdict CONDITIONAL_CONFLICT (temporal): Hotfix skill mandates a full production rollout unconditionally, but deploy skill forbids Friday production deploys unless a P0 is open; hotfixes aren't always P0-classified.",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "Tag, publish, and roll out through the canary pipeline, same as a normal release.",
+        "Never start a production deploy on a Friday unless a P0 incident is open."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP04:6346195f13b1",
+      "pair_key": "9f512a5e2c04+d714e2a45346",
+      "code": "DTP04",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Cross-layer collision (memory vs skill): one side forbids 'force-push', the other requires it.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never force-push.",
+        "Force-push the branch after each rebase; a force-push is required here because the rebase rewrites every commit on the branch."
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP04:b5c11424cd60",
+      "pair_key": "3656001623ad+96bf680d587c",
+      "code": "DTP04",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Cross-layer collision (memory vs skill): one side permits 'edit files under src/generated/', the other forbids it.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never edit files under src/generated/ — the Prisma client and the OpenAPI types there are rebuilt on every build, and hand edits are silently lost.",
+        "If the regenerated client drifts from what the API build expects, it's fine to edit files under src/generated/ to patch the enum casing by hand; call the hand edit out in the PR so the generator bug g"
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP05:4bc97ea558e6",
+      "pair_key": "4866c0edc4ff9cba",
+      "code": "DTP05",
+      "status": "accepted",
+      "note": "fixture intentionally diverges CLAUDE.md/AGENTS.md; documented in EXPECTED.md",
+      "message": "CLAUDE.md and AGENTS.md differ materially (similarity 32%), so different tools see different instruction sets: only claude-code read(s) CLAUDE.md; only amp, codex, cursor, jules, opencode, zed read(s) AGENTS.md.",
+      "severity": "advisory",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "CLAUDE.md",
+        "AGENTS.md"
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP05:eb3c60308d90",
+      "pair_key": "",
+      "code": "DTP05",
+      "status": "accepted",
+      "note": "Zed first-match note is expected for this fixture",
+      "message": "Zed reads only AGENTS.md (first match in its search order); ignored by Zed: CLAUDE.md.",
+      "severity": "advisory",
+      "files": [],
+      "quotes": [],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP06:b8f38cc03cc8",
+      "pair_key": "ea8a71ddc387530b",
+      "code": "DTP06",
+      "status": "accepted",
+      "note": "fixture ships config only; rule scopes match no source tree by design",
+      "message": "Dead scope: activation globs (apps/web/**, shared/**) match no file in the repository — these instructions can never trigger.",
+      "severity": "warning",
+      "files": [
+        ".claude/rules/frontend.md"
+      ],
+      "quotes": [
+        ".claude/rules/frontend.md"
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP06:de885ab5d260",
+      "pair_key": "4cbee81c97012830",
+      "code": "DTP06",
+      "status": "accepted",
+      "note": "fixture ships config only; rule scopes match no source tree by design",
+      "message": "Dead scope: activation globs (services/api/**, shared/**) match no file in the repository — these instructions can never trigger.",
+      "severity": "warning",
+      "files": [
+        ".claude/rules/backend.md"
+      ],
+      "quotes": [
+        ".claude/rules/backend.md"
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:1818163272e0",
+      "pair_key": "01523b47c3fc+d6e25bed9fd6",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both require the same test suite to pass clean/green before merging a PR; identical prescription from two config surfaces with no ordering conflict.",
+      "severity": "warning",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run pnpm test before opening a pull request and make sure the suite passes clean.",
+        "Land nothing until pnpm test is green; CI runs the same suite and will block the merge otherwise."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:1d4be2fb4b63",
+      "pair_key": "2fa224e03aa5+71b12dcbe792",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both mandate squash-merging PRs into main; B additionally requires PRs for every change and branch protection, which A doesn't contradict.",
+      "severity": "warning",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Squash-merge only; the PR title becomes the squashed commit subject.",
+        "Every change lands through a pull request; main is protected and squash-merged."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:2cacce53df2e",
+      "pair_key": "71b12dcbe792+c239bb114141",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: A's merge-back explicitly uses a normal PR, matching B's blanket PR requirement for all changes; both prescribe the same mechanism for landing changes to main.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "AGENTS.md"
+      ],
+      "quotes": [
+        "After the fleet is healthy, merge the fix back to main through a normal PR so the next train carries the incident fix too.",
+        "Every change lands through a pull request; main is protected and squash-merged."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:2ef0359aebd4",
+      "pair_key": "e09f9107294b+f7fce367dbc7",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both instructions state the identical eligibility rule for the hotfix skill from different mechanisms; neither adds new constraints, so they are fully entailing duplicates.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Emergencies: the hotfix skill is for P0/P1 incidents only; everything else rides the weekly release train.",
+        "For P0 and P1 incidents only."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:390580cccb7e",
+      "pair_key": "71b12dcbe792+7a71dbad2809",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both instructions state the identical requirement that all changes go through a pull request rather than direct pushes to main; B adds non-conflicting detail.",
+      "severity": "warning",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never push directly to main; every change lands through a pull request.",
+        "Every change lands through a pull request; main is protected and squash-merged."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:5eedfc55f9f2",
+      "pair_key": "7a71dbad2809+c239bb114141",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both require going through a PR to reach main, not a direct push; B explicitly satisfies A's constraint rather than violating it.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never push directly to main; every change lands through a pull request.",
+        "After the fleet is healthy, merge the fix back to main through a normal PR so the next train carries the incident fix too."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:68e4f191b416",
+      "pair_key": "a47a03044d7b+d83767ae109c",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both state the same workspace structure and directory mapping with only cosmetic wording differences; each entails the other.",
+      "severity": "warning",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Orbit is an issue-tracker SaaS built as a pnpm workspace: a Next.js web app in apps/web, a Fastify API in services/api, and shared TypeScript packages in shared.",
+        "Orbit is an issue-tracker SaaS organized as a pnpm workspace: the Next.js web app lives in apps/web, the Fastify API in services/api, and shared TypeScript packages in shared."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:80ad695885fc",
+      "pair_key": "2cef40797056+b408b00fc9e5",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: B prescribes the affirmative minimal-fix action; A prohibits unnecessary additions. Both point toward the same minimal-change constraint, mutually reinforcing rather than conflicting.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md"
+      ],
+      "quotes": [
+        "No drive-by refactors, no dependency bumps, nothing the incident does not require.",
+        "Cherry-pick or write the minimal fix."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:81bed6ffebaa",
+      "pair_key": "25454c884bfe+70eea8c4575c",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: B is explanatory metadata clarifying A's command rather than a separate prescription; it restates and justifies A without adding conflicting obligations.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md"
+      ],
+      "quotes": [
+        "Run pnpm run test:unit --coverage before opening a pull request and make sure the suite passes clean.",
+        "This is the same canonical suite that pnpm test refers to; the extra flags just add the coverage report the merge gate reads."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:a2f9e087a8a0",
+      "pair_key": "7a71dbad2809+9b062186738f",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both instructions require the same action (PR instead of direct push) for the changelog case; B is a specific instance fully entailed by A's general rule.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/changelog/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never push directly to main; every change lands through a pull request.",
+        "Open a PR with the regenerated file rather than pushing the changelog straight to main; the release owner reviews the wording."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:ab520003e5e3",
+      "pair_key": "566eb0dc7e62+ab9ed56e16ff",
+      "code": "DTR01",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Duplicate instruction across files: the same prescription is stated twice — harmless today, but the copies can silently diverge on the next edit.",
+      "severity": "advisory",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never commit secrets, credentials, or .env files to the repository; load secrets from the Doppler secret manager and reference them by name.",
+        "Never commit secrets, credentials, or .env files to this repository; load secrets from the Doppler secret manager and reference them by name."
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:bea2cb55d639",
+      "pair_key": "21d56b2ae904+fcaad0691161",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both instructions prescribe the identical policy for database migrations: fix forward rather than revert. Same prescription stated in two skills.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/db-migrate/SKILL.md",
+        ".claude/skills/deploy/SKILL.md"
+      ],
+      "quotes": [
+        "Migrations are forward-only in Orbit; a bad migration is rolled forward with a fix, not reverted.",
+        "Rolling back means redeploying the previous tag; database migrations roll forward with a fix instead."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:cbc777296e63",
+      "pair_key": "6038b0733440+e76f83e271f7",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both mandate named exports except for Next.js pages; B omits API routes but doesn't forbid default exports there, so both are jointly satisfiable.",
+      "severity": "warning",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Use named exports; default exports are reserved for Next.js pages and API route modules.",
+        "TypeScript strict mode is on everywhere; stick to named exports outside Next.js pages."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:d1a2ad07e4e7",
+      "pair_key": "199885128bd5+7afa41e26e68",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both mandate the same Postgres-via-Prisma rule; A adds unrelated tooling stipulations but the overlapping claim is identical, so B is fully entailed by A.",
+      "severity": "warning",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Postgres through Prisma, vitest for unit tests, Playwright for end-to-end, changesets for versioning.",
+        "Postgres is accessed through Prisma."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:d3130d804044",
+      "pair_key": "026de7d02cc1+f7fce367dbc7",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both instructions state the same rule (non-emergencies use the weekly release train) in different files/layers; neither contradicts nor overrides the other.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Emergencies: the hotfix skill is for P0/P1 incidents only; everything else rides the weekly release train.",
+        "Everything else rides the weekly train, no matter how tempting the shortcut looks."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:e815cfa807c6",
+      "pair_key": "2fa224e03aa5+3b15c59b18ed",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: B explicitly defers to CLAUDE.md's commit conventions and restates the same rule; both prescribe identical squash-merge/PR-title behavior with no divergence.",
+      "severity": "warning",
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Squash-merge only; the PR title becomes the squashed commit subject.",
+        "Follow the commit conventions documented in CLAUDE.md; the PR title becomes the squashed commit subject."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:f4e667af30ff",
+      "pair_key": "01523b47c3fc+25454c884bfe",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: B clarifies that its flagged invocation is the same suite as A's pnpm test, just with added coverage flags — not a competing prescription.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run pnpm test before opening a pull request and make sure the suite passes clean.",
+        "This is the same canonical suite that pnpm test refers to; the extra flags just add the coverage report the merge gate reads."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:f70de3995dea",
+      "pair_key": "241df7d8cd8a+41da243ec3d3",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both instructions specify the same trigger point (immediately before commit, after edits) for the same action, describing consistent, mutually reinforcing timing.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Everyday changes: edit, then invoke the pre-commit skill as the last step before any commit; it lints first, then typechecks, then runs the unit suite.",
+        "Run this after your edits are complete and staged, immediately before the commit."
+      ],
+      "lanes": [
+        "jury",
+        "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR01:f88aa5081cb6",
+      "pair_key": "71b12dcbe792+9b062186738f",
+      "code": "DTR01",
+      "status": "accepted",
+      "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
+      "message": "Jury verdict REDUNDANT: Both mandate PR-based changes instead of direct pushes to main; A is a specific instance of B's general rule, not a conflicting prescription.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/changelog/SKILL.md",
+        "AGENTS.md"
+      ],
+      "quotes": [
+        "Open a PR with the regenerated file rather than pushing the changelog straight to main; the release owner reviews the wording.",
+        "Every change lands through a pull request; main is protected and squash-merged."
+      ],
+      "lanes": [
+        "jury"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR02:347d9e82cb01",
+      "pair_key": "01523b47c3fc+70eea8c4575c",
+      "code": "DTR02",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Near-duplicate drift: these read as two versions of the same instruction that have started to diverge — a merge conflict in slow motion.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/pre-commit/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run pnpm test before opening a pull request and make sure the suite passes clean.",
+        "Run pnpm run test:unit --coverage before opening a pull request and make sure the suite passes clean."
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR05:8d3f32782000",
+      "pair_key": "286fc95b443a",
+      "code": "DTR05",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "References 'scripts/verify-all.sh', which does not exist in the repository.",
+      "severity": "warning",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Run scripts/verify-all.sh before you push; it chains lint, typecheck, and the unit suite in the exact order CI uses."
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTR05:91ce997147ff",
+      "pair_key": "bd2936345173",
+      "code": "DTR05",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "References 'docs/testing.md', which does not exist in the repository.",
+      "severity": "warning",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "See docs/testing.md for the flake quarantine process and for what counts as an integration test."
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTS01:dd34c9dd10be",
+      "pair_key": "559d9fd7b35248b2",
+      "code": "DTS01",
+      "status": "open",
+      "note": "planted conflict, see EXPECTED.md",
+      "message": "Trigger overlap between 'hotfix' and 'release' (72% description overlap): the model routes on these descriptions and no ecosystem documents arbitration — which one fires is nondeterministic.",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        ".claude/skills/release/SKILL.md"
+      ],
+      "quotes": [
+        "Use when shipping a new version of Orbit to production urgently — cut the fix, tag it, publish the packages, and roll the deploy out ahead of the release train.",
+        "Use when shipping a new version of Orbit to production — cut the version, tag it, publish the packages, and roll the deploy out."
+      ],
+      "lanes": [
+        "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "detangle"
+version = "0.1.0"
+description = "Merge-conflict detection and CI for English-as-code: a static conflict linter for AI agent configurations (CLAUDE.md, AGENTS.md, skills, rules, subagents, and friends)."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Dhyey Mavani" }]
+keywords = [
+    "lint",
+    "llm",
+    "agents",
+    "claude-code",
+    "agents-md",
+    "prompt-engineering",
+    "static-analysis",
+    "instruction-conflict",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+nli = ["sentence-transformers>=3.0", "torch>=2.0"]
+jury = ["anthropic>=0.40"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6"]
+
+[project.scripts]
+detangle = "detangle.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/DhyeyMavani2003/detangle"
+Repository = "https://github.com/DhyeyMavani2003/detangle"
+Issues = "https://github.com/DhyeyMavani2003/detangle/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/detangle"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+ignore = [
+    "E501",   # long lines in lexicons/tables are deliberate
+    "SIM108", # ternary is not always clearer
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["src/detangle"]
