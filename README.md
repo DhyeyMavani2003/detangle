@@ -96,6 +96,43 @@ or **any OpenAI-compatible endpoint** — OpenAI, DeepSeek, Gemini's compat laye
 fully local Ollama/vLLM server — via stdlib HTTP, no SDK needed. See
 [docs/lanes.md](docs/lanes.md).
 
+### Bring your own API key
+
+The key itself never goes in a detangle file — detangle reads keys from **environment
+variables** only; the config file at most names *which* variable to read.
+
+```bash
+# Anthropic API key — nothing to configure; `auto` detects the key
+pip install 'detangle[jury]'
+export ANTHROPIC_API_KEY=sk-ant-...
+detangle scan --screen
+```
+
+```toml
+# Any other provider with an OpenAI-compatible endpoint — .detangle.toml:
+[detangle.jury]
+backend = "openai"                       # set explicitly (auto prefers key/CLI)
+base_url = "https://api.openai.com/v1"   # or DeepSeek / Gemini-compat / xAI ...
+api_key_env = "OPENAI_API_KEY"           # NAME of the env var holding your key
+model = "gpt-5-mini"
+
+[detangle.screen]
+model = "gpt-5"                          # strong model for the one-call screen
+```
+
+```toml
+# Fully local, no key: point base_url at Ollama/vLLM; if the env var named by
+# api_key_env is unset, no auth header is sent.
+[detangle.jury]
+backend = "openai"
+base_url = "http://localhost:11434/v1"
+model = "qwen3:8b"
+```
+
+`auto`'s detection order is `ANTHROPIC_API_KEY` → `claude` CLI on PATH → configured
+`base_url`. If you have the Claude CLI installed but want a different provider, set
+`backend = "openai"` explicitly.
+
 (`pip install git+https://github.com/DhyeyMavani2003/detangle` also works once this code
 is on the default branch.)
 
