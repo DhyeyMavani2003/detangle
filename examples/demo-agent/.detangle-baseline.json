@@ -2195,6 +2195,28 @@
       "missing_since": null
     },
     {
+      "fingerprint": "DTP04:4c658afc5f55",
+      "pair_key": "71b12dcbe792+9f512a5e2c04",
+      "code": "DTP04",
+      "status": "accepted",
+      "note": "sibling of the accepted CLAUDE.md never-push-to-main pair: force-pushing the hotfix branch is not pushing to main; a 0.70 borderline verdict that crosses tau only on some calls (nightly runner cache)",
+      "message": "TypeSafe verdict conditional_conflict (conflict probability 0.70).",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "AGENTS.md"
+      ],
+      "quotes": [
+        "Force-push the branch after each rebase; a force-push is required here because the rebase rewrites every commit on the branch.",
+        "Every change lands through a pull request; main is protected and squash-merged."
+      ],
+      "lanes": [
+        "typesafe"
+      ],
+      "first_seen": "2026-09-17",
+      "missing_since": null
+    },
+    {
       "fingerprint": "DTP04:6346195f13b1",
       "pair_key": "9f512a5e2c04+d714e2a45346",
       "code": "DTP04",
@@ -2724,7 +2746,7 @@
       "status": "accepted",
       "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
       "message": "Jury verdict REDUNDANT: Both instructions state the same rule (non-emergencies use the weekly release train) in different files/layers; neither contradicts nor overrides the other.",
-      "severity": "warning",
+      "severity": "advisory",
       "files": [
         ".claude/skills/hotfix/SKILL.md",
         "CLAUDE.md"
@@ -2734,8 +2756,7 @@
         "Everything else rides the weekly train, no matter how tempting the shortcut looks."
       ],
       "lanes": [
-        "jury",
-        "screen"
+        "typesafe"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null

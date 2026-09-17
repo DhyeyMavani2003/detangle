@@ -433,9 +433,14 @@ the lane catches 4 of the 5 planted conflicts the deterministic lane doesn't alr
 missing exactly that one. Routing ambiguity (DTS01) stays deterministic.
 
 **Cache & cost.** Verdicts cache per pair by (version, model, prompt hash, pair key) —
-re-scans are free. Failure behavior mirrors the jury: no key → lane skipped with a note;
-429/529 → exponential backoff; a failed call leaves pairs unjudged (never cached) and marks
-the lane incomplete for the baseline's missing-stamp logic.
+re-scans are free, and the cache is also what keeps runs *stable*: a fresh judgment of the
+same question moves by ±0.01 (median; 0.09 at most), so a pair sitting within a few
+hundredths of `tau` can land on either side on a different day or machine (the nightly
+workflow persists the cache between nights for exactly this reason; the one finding a
+fresh GitHub runner produced beyond the committed demo baseline was a 0.70 verdict). Failure
+behavior mirrors the jury: no key → lane skipped with a note; 429/5xx and dropped
+connections → exponential backoff; a malformed answer is never cached; a failed call leaves
+pairs unjudged and marks the lane incomplete for the baseline's missing-stamp logic.
 
 ---
 
