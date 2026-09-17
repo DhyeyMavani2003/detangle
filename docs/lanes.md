@@ -452,6 +452,18 @@ behavior mirrors the jury: no key → lane skipped with a note; 429/5xx and drop
 connections → exponential backoff; a malformed answer is never cached; a failed call leaves
 pairs unjudged and marks the lane incomplete for the baseline's missing-stamp logic.
 
+**Extractor audit (measured, not landed).** Per-unit TypeSafe questions make a sharp
+audit of the deterministic extractor: on the demo agent it drops 40/134 directives (29.9%)
+and mis-reads modality on 7/75 strict units (9.3%) — `can` inside a purpose clause ("so the
+author can triage") read as a permission, a trailing "never the other way around" inverting
+an imperative, prohibitions and obligations phrased as "No drive-by refactors" / "needs a
+changeset", imperatives behind `Label:` prefixes and leading condition clauses. Feeding
+those answers back into the deterministic detectors was measured at +1/30 on the holdout
+(frames, not modality, are the binding constraint), and five adversarial review rounds
+could not make any of the corresponding lexicon fixes precise: each traded a corrected
+modality for a new false positive, a severity escalation or a lost finding on realistic
+prose. Precision-first, none of them shipped; TypeSafe's value stays at the pair level.
+
 ---
 
 ## Which lane decided what?
