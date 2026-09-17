@@ -108,7 +108,13 @@ def load_config(root: Path, path: Path | None = None) -> Config:
 
 
 def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
-    tbl = data.get("detangle", data)  # allow top-level or [detangle] table
+    # keys may sit at the top level or under [detangle]; a file that mixes a
+    # top-level `deep = true` with a [detangle.baseline] table reads both
+    tbl = data.get("detangle")
+    if isinstance(tbl, dict):
+        tbl = {**{k: v for k, v in data.items() if k != "detangle"}, **tbl}
+    else:
+        tbl = data
 
     def bad(msg: str) -> ConfigError:
         return ConfigError(f"{src}: {msg}")

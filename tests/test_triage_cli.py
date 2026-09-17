@@ -145,6 +145,7 @@ class TestDeepExpansion:
         write_tree(tmp_path, {"CLAUDE.md": "# T\n\nNever push to main.\n"})
         cfg = Config(root=tmp_path)
         cfg.deep = True
+        cfg.typesafe_api_key_env = "DETANGLE_TEST_NO_SUCH_KEY"  # never a developer's real key
         result = scan(cfg)  # lanes skip gracefully without backends/models
         assert cfg.lane_screen and cfg.lane_jury and cfg.lane_nli
         assert cfg.jury_max_pairs >= 1000

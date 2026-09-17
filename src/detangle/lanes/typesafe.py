@@ -6,9 +6,9 @@ question per instruction pair and reads back a probability distribution over
 relationship classes. Two properties make it a different kind of lane:
 
 - **Batching.** Every question in a request sees the same ``state`` and is
-  evaluated in parallel, so a whole config's units go in as state once and
-  hundreds of pair questions ride along — a 49-tree holdout adjudicates in
-  seconds, not hours.
+  evaluated in parallel, so a batch of ``pairs_per_call`` pairs (default 20),
+  each asked in both orderings, rides in one call — a 49-tree holdout
+  adjudicates in about 20 seconds, not hours.
 - **Calibration.** Emission is thresholded on the returned probabilities, and
   on the holdout the lane reached the deep opus+opus cascade's recall with
   zero false positives at every threshold tried (docs/lanes.md).
@@ -48,6 +48,7 @@ configs make zero calls.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import time
@@ -167,6 +168,8 @@ _PROMPT_HASH = hashlib.sha256(
 # because judgment quality measurably degrades as the shared state grows —
 # see docs/lanes.md — so small batches buy recall.
 _BUDGET_TOKENS = 14_000
+# HTTP statuses worth a retry with backoff; anything else ends the lane for the run
+_TRANSIENT_HTTP = {429, 500, 502, 503, 504, 529}
 
 
 class TypeSafeClient:
@@ -211,18 +214,24 @@ class TypeSafeClient:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     payload = json.loads(resp.read().decode("utf-8"))
                 self.calls += 1
-                answers = payload.get("answers")
+                answers = payload.get("answers") if isinstance(payload, dict) else None
                 if not isinstance(answers, dict):
                     raise JuryError(f"typesafe: unexpected response shape: {str(payload)[:200]}")
                 return answers
             except urllib.error.HTTPError as e:
-                detail = e.read().decode("utf-8", "replace")[:300]
-                if e.code in (429, 529) and attempt < 5:
+                # the body is quoted in a scan note: never let it carry the key
+                detail = e.read().decode("utf-8", "replace")[:300].replace(self.api_key, "***")
+                if e.code in _TRANSIENT_HTTP and attempt < 5:
                     time.sleep(delay)
                     delay = min(delay * 2, 30)
                     continue
                 raise JuryError(f"typesafe HTTP {e.code}: {detail}") from e
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+            except (
+                urllib.error.URLError,
+                OSError,  # connection reset / refused / timed out
+                http.client.HTTPException,  # dropped connection, bad status line, short read
+                json.JSONDecodeError,
+            ) as e:
                 if attempt < 5:
                     time.sleep(delay)
                     delay = min(delay * 2, 30)
@@ -275,33 +284,81 @@ def _conflict_mass(probs: dict) -> float:
     return float(sum(probs.get(c, 0.0) for c in CONFLICT_CLASSES))
 
 
+def _valid_probs(x: object) -> dict[str, float] | None:
+    """A probability distribution as the API returns it, coerced to floats —
+    or None for anything malformed, which is never cached and never trusted
+    back out of the cache (one bad response must not poison every later scan)."""
+    if not isinstance(x, dict) or not x:
+        return None
+    out: dict[str, float] = {}
+    for k, v in x.items():
+        if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+            return None
+        try:
+            f = float(v)
+        except ValueError:
+            return None
+        if not (-1e-6 <= f <= 1 + 1e-6):
+            return None
+        out[str(k)] = f
+    return out
+
+
+def _sanitize(rec: object) -> dict | None:
+    """A judged-pair record with both orderings validated; None means "ask again"."""
+    if not isinstance(rec, dict):
+        return None
+    probs = _valid_probs(rec.get("probs"))
+    swapped = _valid_probs(rec.get("probs_swapped"))
+    if probs is None or swapped is None:
+        return None
+    return {"probs": probs, "probs_swapped": swapped, "batch": rec.get("batch")}
+
+
 def _estimate_tokens(obj: object) -> int:
     return len(json.dumps(obj, ensure_ascii=False)) // 2
 
 
-def _select_pairs(cfg: Config, ctx: AnalysisContext) -> list[UnitPair]:
+def _select_pairs(cfg: Config, ctx: AnalysisContext) -> tuple[list[UnitPair], bool]:
     """All co-activatable unit pairs (``pairs = "all"``) or the deterministic
-    lane's unclaimed candidate pairs (``pairs = "candidates"``)."""
-    if cfg.typesafe_pairs == "candidates":
-        return [p for p in ctx.pairs if not ctx.is_claimed(p)]
-    units = ctx.units
+    lane's unclaimed candidate pairs (``pairs = "candidates"``), one per pair
+    key, and whether ``max_pairs`` cut the list short.
+
+    Verbatim copies of one unit (same uid) are never paired with each other:
+    a request keyed by uid could not tell the copies apart, and duplicated
+    text is the deterministic DTR01 detector's territory."""
+
+    def candidates():
+        if cfg.typesafe_pairs == "candidates":
+            for p in ctx.pairs:
+                if not ctx.is_claimed(p) and p.a.uid != p.b.uid:
+                    yield p
+            return
+        units = ctx.units
+        for i in range(len(units)):
+            for j in range(i + 1, len(units)):
+                a, b = units[i], units[j]
+                if a.uid == b.uid:
+                    continue
+                pair = build_pair(a, b)
+                if pair.co_active == CoActiveClass.MUTUALLY_EXCLUSIVE or ctx.is_claimed(pair):
+                    continue
+                yield pair
+
     out: list[UnitPair] = []
-    for i in range(len(units)):
-        for j in range(i + 1, len(units)):
-            a, b = units[i], units[j]
-            if a.uid == b.uid and a.span.start_line == b.span.start_line:
-                continue
-            pair = build_pair(a, b)
-            if pair.co_active == CoActiveClass.MUTUALLY_EXCLUSIVE or ctx.is_claimed(pair):
-                continue
-            out.append(pair)
-            if len(out) >= cfg.typesafe_max_pairs:
-                ctx.corpus.notes.append(
-                    f"typesafe lane: pair cap reached ({cfg.typesafe_max_pairs}); "
-                    "remaining pairs not judged"
-                )
-                return out
-    return out
+    seen: set[str] = set()
+    for pair in candidates():
+        if pair.key in seen:
+            continue  # a verbatim copy elsewhere in the file: same question, same verdict
+        if len(out) >= cfg.typesafe_max_pairs:
+            ctx.corpus.notes.append(
+                f"typesafe lane: pair cap reached ({cfg.typesafe_max_pairs}); "
+                "remaining pairs not judged"
+            )
+            return out, True
+        seen.add(pair.key)
+        out.append(pair)
+    return out, False
 
 
 def judge_pairs(
@@ -322,11 +379,11 @@ def judge_pairs(
     results: dict[str, dict] = {}
     pending: list[UnitPair] = []
     for p in pairs:
-        hit = cache.get(cache.key(client.ident, _PROMPT_HASH, f"{p.key}{suffix}"))
+        hit = _sanitize(cache.get(cache.key(client.ident, _PROMPT_HASH, f"{p.key}{suffix}")))
         if hit is not None:
             results[p.key] = hit
         else:
-            pending.append(p)
+            pending.append(p)  # never judged, or a malformed record: ask again
 
     while pending:
         chunk: list[UnitPair] = []
@@ -350,21 +407,28 @@ def judge_pairs(
             questions[f"r_{p.b.uid}_{p.a.uid}"] = _question(p.b.uid, p.a.uid, p)
         answers = client.evaluate(state, questions)
         for p in chunk:
-            fwd = answers.get(f"r_{p.a.uid}_{p.b.uid}") or {}
-            rev = answers.get(f"r_{p.b.uid}_{p.a.uid}") or {}
-            if not isinstance(fwd.get("probabilities"), dict):
-                continue  # malformed answer: leave unjudged (never cached)
-            rec = {
-                "probs": fwd["probabilities"],
-                "probs_swapped": rev.get("probabilities")
-                if isinstance(rev.get("probabilities"), dict)
-                else None,
-                "batch": len(chunk),
-            }
+            fwd = answers.get(f"r_{p.a.uid}_{p.b.uid}")
+            rev = answers.get(f"r_{p.b.uid}_{p.a.uid}")
+            rec = _sanitize(
+                {
+                    "probs": fwd.get("probabilities") if isinstance(fwd, dict) else None,
+                    "probs_swapped": rev.get("probabilities") if isinstance(rev, dict) else None,
+                    "batch": len(chunk),
+                }
+            )
+            if rec is None:
+                continue  # malformed answer (either ordering): leave unjudged, never cached
             cache.put(cache.key(client.ident, _PROMPT_HASH, f"{p.key}{suffix}"), rec)
             results[p.key] = rec
         cache.save()
     return results
+
+
+def _redundant(rec: dict) -> float:
+    """Redundancy mass: the minimum over the two orderings."""
+    probs = rec["probs"]
+    swapped = rec.get("probs_swapped") or probs
+    return min(float(probs.get("redundant", 0.0)), float(swapped.get("redundant", 0.0)))
 
 
 def _mass(rec: dict) -> float:
@@ -397,7 +461,8 @@ def _verdict(rec: dict) -> tuple[str | None, float, str]:
     mass = _mass(rec)
     mean = {c: (probs.get(c, 0.0) + swapped.get(c, 0.0)) / 2 for c in CONFLICT_CLASSES}
     cls = max(CONFLICT_CLASSES, key=lambda c: mean[c])
-    redundant = min(float(probs.get("redundant", 0.0)), float(swapped.get("redundant", 0.0)))
+    # redundancy, like a conflict, must be seen by every reading of the pair
+    redundant = min(_redundant(rec), rec.get("batched_redundant", 1.0))
     if redundant >= 0.7 and mass < 0.3:
         return "DTR01", redundant, "redundant"
     return _CODE_FOR[cls], mass, cls
@@ -435,7 +500,7 @@ def run_typesafe_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]
         ctx.corpus.notes.append(f"{e} — lane skipped")
         return findings
 
-    pairs = _select_pairs(cfg, ctx)
+    pairs, capped = _select_pairs(cfg, ctx)
     if not pairs:
         ctx.lanes_ran.add("typesafe")
         ctx.corpus.notes.append("typesafe lane: no pairs to judge")
@@ -444,14 +509,16 @@ def run_typesafe_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]
     try:
         judged = judge_pairs(client, pairs, cache, cfg.typesafe_pairs_per_call)
     except JuryError as e:
+        # nothing is handed to the jury either: it keeps its own candidate
+        # ranking rather than receiving an empty band
         ctx.corpus.notes.append(f"typesafe lane: {e}; lane incomplete")
-        judged = {}
+        return findings
 
     # second pass: everything the batched pass put at or above the uncertain
     # band is re-asked alone. The solo verdict decides clearing and the class;
     # emission still needs the batched pass's agreement (the solo record
-    # carries the batched mass, and _mass takes the minimum). A pair that
-    # already had the request to itself is not asked again.
+    # carries the batched masses, and _mass/_verdict take the minimum). A pair
+    # that already had the request to itself is not asked again.
     rejudged = 0
     if judged and cfg.typesafe_rejudge:
         band = [
@@ -469,7 +536,10 @@ def run_typesafe_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]
             )
             solo = {}
         for key, rec in solo.items():
-            judged[key] = dict(rec, batched_mass=_mass(judged[key]))
+            batched = judged[key]
+            judged[key] = dict(
+                rec, batched_mass=_mass(batched), batched_redundant=_redundant(batched)
+            )
         rejudged = len(solo)
 
     emitted = 0
@@ -523,16 +593,29 @@ def run_typesafe_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]
             emitted += 1
         elif _mass_max(rec) >= cfg.typesafe_uncertain_low:
             uncertain.append((pair, _mass_max(rec)))
+        else:
+            ctx.cleared.add(pair.key)
 
-    if judged and len(judged) == len(pairs):
+    # complete = every selected pair judged and none cut by the cap; only then
+    # may the baseline treat a missing TypeSafe finding as gone
+    complete = len(judged) == len(pairs) and not capped
+    if complete:
         ctx.lanes_ran.add("typesafe")
-    # the uncertain band goes to the jury (if enabled) through the NLI channel,
-    # best-scored first; a confident TypeSafe verdict never reaches the jury
-    if cfg.lane_jury and getattr(ctx, "nli_not_cleared", None) is None:
-        ctx.nli_not_cleared = sorted(uncertain, key=lambda t: -t[1])
+    # the uncertain band goes to the jury (if enabled) through the channel the
+    # NLI lane uses, best-scored first and merged with whatever another lane
+    # already handed on; a confident TypeSafe verdict never reaches the jury.
+    # An incomplete run hands nothing on: the jury keeps its own ranking.
+    if cfg.lane_jury and complete:
+        prev = getattr(ctx, "nli_not_cleared", None) or []
+        have = {p.key for p, _ in prev}
+        ctx.nli_not_cleared = prev + [
+            t for t in sorted(uncertain, key=lambda t: -t[1]) if t[0].key not in have
+        ]
     ctx.corpus.notes.append(
-        f"typesafe lane: judged {len(judged)} pair(s) with {client.ident} in "
+        f"typesafe lane: judged {len(judged)} of {len(pairs)} pair(s) with {client.ident} in "
         f"{client.calls} call(s), {rejudged} re-judged alone; {emitted} finding(s), "
-        f"{len(uncertain)} uncertain" + (" (handed to the jury)" if cfg.lane_jury else "")
+        f"{len(uncertain)} uncertain"
+        + (" (handed to the jury)" if cfg.lane_jury and complete else "")
+        + ("" if complete else " — lane incomplete")
     )
     return findings

@@ -150,8 +150,9 @@ your editor hooks and PR checks read. See [triage.md](triage.md).
 | `screen` | bool | `false` | Enable the whole-config screen sweep. **Implies `jury`** (the screen only nominates; the jury adjudicates its nominations). Also switches extraction to high-recall mode for the screen's benefit. |
 | `typesafe` | bool | `false` | Enable the TypeSafe lane: calibrated typed pair judgments (needs `TYPESAFE_API_KEY`; see [lanes.md](lanes.md)). Switches extraction to high-recall mode. Composes with `jury`: TypeSafe's uncertain band is what the jury then adjudicates. |
 
-See [lanes.md](lanes.md). The `--nli` / `--jury` / `--screen` flags turn a lane **on** for one
-run; they cannot turn off a lane enabled in the file. Must be a table, else a config error.
+See [lanes.md](lanes.md). The `--nli` / `--jury` / `--screen` / `--typesafe` flags turn a lane
+**on** for one run; they cannot turn off a lane enabled in the file. Must be a table, else a
+config error.
 
 ### `[detangle.rules]` — table, default empty
 
@@ -167,9 +168,9 @@ codes are a config error). Values:
 Any other value is a config error. A severity override replaces the detector's own choice,
 including dynamic downgrades (e.g. DTC01's exposure-based `error`→`warning`).
 
-Scope note (current behavior): disables and severity overrides are applied to the
-deterministic detectors' output. Findings emitted by the optional NLI/jury lanes are not
-routed through this filter.
+Scope note: disables and severity overrides apply to every lane's findings — the
+deterministic detectors' output and the jury's and TypeSafe's verdicts alike (a TypeSafe
+DTP04 overlay verdict responds to `DTP04 = false` exactly as the deterministic one does).
 
 ### `[detangle.jury]` — table
 
@@ -199,7 +200,7 @@ The screen shares the jury's `backend` / `base_url` / `api_key_env` transport se
 | `endpoint` | string | `https://api.typesafe.ai/v1/systemone` | Evaluation endpoint. |
 | `pairs` | string | `"all"` | `all` = every co-activatable unit pair (O(n²), best recall); `candidates` = the deterministic lane's blocked pairs (cheaper). |
 | `tau` | float | `0.7` | Conflict-probability threshold for emitting a finding. |
-| `strong` | float | `0.9` | At/above this a non-conditional verdict is `warning`; below, `advisory`. |
+| `strong` | float | `0.9` | At/above this a verdict is `warning`; below, `advisory`. Conditional-conflict and goal-tension verdicts are always `advisory`, like the jury's conditional verdicts. |
 | `uncertain_low` | float | `0.3` | Pairs with probability in `[uncertain_low, tau)` are handed to the jury lane when it is enabled. |
 | `pairs_per_call` | int | `20` | Pairs batched per request (each in both orderings). Keep small: judgment quality measurably degrades as the shared state grows. |
 | `rejudge` | bool | `true` | Second pass: every pair the batched pass scored at or above `uncertain_low` is re-asked alone (a two-unit state, same questions). The solo verdict clears batched noise and picks the class; a pair fires only when both passes see the conflict. Costs one small call per such pair (a few percent of pairs). |
@@ -355,5 +356,6 @@ Lists every rule code with its name, default severity, and one-line summary.
 | Variable | Used by | Meaning |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | jury `anthropic` backend | API key for the Anthropic SDK. With the `claude-cli` backend no key is needed (the CLI carries its own auth); with the `openai` backend the key env var is named by `api_key_env`. If no backend is available while `--jury` is requested, the lane is skipped with a warning; the scan still completes. |
+| `TYPESAFE_API_KEY` | `typesafe` lane | API key for TypeSafe's System One endpoint; the variable's name is configurable via `[detangle.typesafe] api_key_env`. Absent while `--typesafe` (or `--deep`) is requested, the lane is skipped with a note; the scan still completes. |
 
 The deterministic core reads no environment variables and makes no network calls.

@@ -5,6 +5,8 @@ network needed in CI."""
 from __future__ import annotations
 
 import json
+import re
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -12,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from detangle.config import Config, load_config
-from detangle.lanes.typesafe import RELATION_CRITERIA, _conflict_mass, _verdict
+from detangle.lanes.typesafe import RELATION_CRITERIA, _conflict_mass, _sanitize, _verdict
 from detangle.pipeline import scan
 
 from .conftest import write_tree
@@ -43,6 +45,11 @@ class _Scripted:
         self.questions_seen = 0
         self.state_sizes: list[int] = []
         self.fail_first = False
+        # one-shot misbehaviour for the NEXT request: "429", "500", "drop"
+        # (close without a response), "list" (a JSON list body), "strings"
+        # (per-question error strings), "poison" (string-valued probabilities)
+        self.once: str | None = None
+        self.self_questions = 0  # a unit asked about itself: must never happen
         self.batched = {"contradictory": 0.92, "conditional_conflict": 0.05, "distinct": 0.03}
         self.alone: dict | None = None
 
@@ -57,6 +64,7 @@ class _Scripted:
             # the question carries the pair's co-activation account and precedence
             assert set(q["instructions"]["co_activation"]) == {"class", "account", "precedence"}
             _, a, b = qid.split("_", 2)
+            self.self_questions += a == b
             texts = units[a]["text"] + " " + units[b]["text"]
             if "linter first" in texts and "Start with the test suite" in texts:
                 probs = dict.fromkeys(RELATION_CRITERIA, 0.0)
@@ -71,6 +79,12 @@ class _Scripted:
                 "probabilities": probs,
                 "confidence": 0.9,
             }
+        mode, self.once = self.once, None
+        if mode == "strings":
+            answers = dict.fromkeys(answers, "error: rate limited")
+        elif mode == "poison":
+            for ans in answers.values():
+                ans["probabilities"] = dict.fromkeys(ans["probabilities"], "n/a")
         return {
             "model": "jev-test",
             "answers": answers,
@@ -95,7 +109,22 @@ def server():
                 return
             n = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(n))
-            out = json.dumps(scripted.answer(body)).encode()
+            if scripted.once in ("429", "500"):
+                code, scripted.once = int(scripted.once), None
+                self.send_response(code)
+                self.end_headers()
+                return
+            if scripted.once == "drop":
+                scripted.once = None
+                self.close_connection = True
+                self.connection.shutdown(socket.SHUT_RDWR)
+                return
+            if scripted.once == "list":
+                scripted.once = None
+                payload = b"[]"
+            else:
+                payload = json.dumps(scripted.answer(body)).encode()
+            out = payload
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(out)))
@@ -192,9 +221,11 @@ def test_uncertain_band_goes_to_jury_channel(tmp_path: Path, server, monkeypatch
     assert mass == pytest.approx(0.97)
 
 
-def test_solo_rejudge_replaces_batched_verdict(tmp_path: Path, server, monkeypatch):
-    """The second pass re-asks band-or-above pairs alone and the solo answer
-    wins in both directions; ``rejudge = false`` keeps the batched verdict."""
+def test_solo_rejudge_clears_but_needs_both_passes_to_emit(tmp_path: Path, server, monkeypatch):
+    """The second pass re-asks band-or-above pairs alone: the solo answer
+    clears batched noise, a promotion needs the batched pass's agreement, and
+    the weaker of the two passes sets the mass; ``rejudge = false`` keeps the
+    batched verdict."""
     scripted, endpoint = server
     monkeypatch.setenv("TS_TEST_KEY", "test-key")
     captured = {}
@@ -245,6 +276,159 @@ def test_solo_rejudge_replaces_batched_verdict(tmp_path: Path, server, monkeypat
     assert any("0 re-judged alone" in n for n in r.corpus.notes)
 
 
+def test_malformed_responses_end_the_lane_cleanly_and_are_never_cached(
+    tmp_path: Path, server, monkeypatch
+):
+    """A JSON list body, per-question error strings and non-numeric
+    probabilities all end the lane with a note (no crash, no findings), hand
+    nothing to the jury — which then keeps its own candidate ranking — and
+    cache nothing, so the next healthy scan judges every pair."""
+    scripted, endpoint = server
+    monkeypatch.setenv("TS_TEST_KEY", "test-key")
+    captured = {}
+
+    def fake_jury(cfg, ctx, findings):
+        captured["band"] = getattr(ctx, "nli_not_cleared", "untouched")
+        return findings
+
+    monkeypatch.setattr("detangle.lanes.jury.run_jury_lane", fake_jury)
+    write_tree(tmp_path, TREE)
+    for mode in ("list", "strings", "poison"):
+        scripted.once = mode
+        r = scan(_cfg(tmp_path, endpoint, lane_jury=True))
+        assert not [f for f in r.findings if "typesafe" in f.lanes], mode
+        assert any("lane incomplete" in n for n in r.corpus.notes), (mode, r.corpus.notes)
+        assert not any("handed to the jury" in n for n in r.corpus.notes), mode
+        assert captured["band"] == "untouched", mode
+    r = scan(_cfg(tmp_path, endpoint, lane_jury=True))
+    assert len([f for f in r.findings if "typesafe" in f.lanes]) == 1
+    assert captured["band"] == []
+
+
+def test_sanitize_rejects_poisoned_records():
+    good = {"probs": {"distinct": 1.0}, "probs_swapped": {"distinct": "1.0"}, "batch": 3}
+    assert _sanitize(good) == {
+        "probs": {"distinct": 1.0},
+        "probs_swapped": {"distinct": 1.0},
+        "batch": 3,
+    }
+    assert _sanitize({"probs": {"distinct": "n/a"}, "probs_swapped": {"distinct": 1.0}}) is None
+    assert _sanitize({"probs": {"distinct": 1.0}, "probs_swapped": None}) is None
+    assert _sanitize({"probs": {"distinct": 7}, "probs_swapped": {"distinct": 1.0}}) is None
+    assert _sanitize({"probs": {}, "probs_swapped": {"distinct": 1.0}}) is None
+    assert _sanitize("garbage") is None
+
+
+@pytest.mark.parametrize("mode", ["drop", "500", "429"])
+def test_transient_failures_are_retried(tmp_path: Path, server, monkeypatch, mode):
+    """A dropped connection and a 5xx are retried with backoff like a 429."""
+    scripted, endpoint = server
+    scripted.once = mode
+    monkeypatch.setenv("TS_TEST_KEY", "test-key")
+    monkeypatch.setattr("detangle.lanes.typesafe.time.sleep", lambda s: None)
+    write_tree(tmp_path, TREE)
+    r = scan(_cfg(tmp_path, endpoint))
+    assert [f for f in r.findings if "typesafe" in f.lanes]
+    assert not any("lane incomplete" in n for n in r.corpus.notes)
+
+
+DUP_TREE = {
+    "CLAUDE.md": (
+        "# Workflow\n\n"
+        "Run the linter first, then the test suite; commit only after both pass.\n\n"
+        "Keep the changelog current.\n\n"
+        "Keep the changelog current.\n"
+    ),
+    ".claude/skills/pre-commit/SKILL.md": TREE[".claude/skills/pre-commit/SKILL.md"],
+}
+
+
+def test_verbatim_duplicate_units_do_not_block_completion(tmp_path: Path, server, monkeypatch):
+    """A sentence repeated verbatim in one file shares its uid: the copies are
+    never paired with each other, each distinct pair key is judged once, and
+    the lane still completes — so the baseline may stamp its findings missing."""
+    scripted, endpoint = server
+    monkeypatch.setenv("TS_TEST_KEY", "test-key")
+    write_tree(tmp_path, DUP_TREE)
+    r = scan(_cfg(tmp_path, endpoint))
+    note = next(n for n in r.corpus.notes if n.startswith("typesafe lane: judged"))
+    m = re.search(r"judged (\d+) of (\d+)", note)
+    assert m and m.group(1) == m.group(2), note
+    assert "lane incomplete" not in note
+    assert scripted.self_questions == 0
+    assert [f for f in r.findings if "typesafe" in f.lanes]
+
+
+def test_pair_cap_marks_the_lane_incomplete(tmp_path: Path, server, monkeypatch):
+    scripted, endpoint = server
+    monkeypatch.setenv("TS_TEST_KEY", "test-key")
+    write_tree(tmp_path / "full", TREE)
+    r = scan(_cfg(tmp_path / "full", endpoint))
+    note = next(n for n in r.corpus.notes if n.startswith("typesafe lane: judged"))
+    n_pairs = int(re.search(r"judged (\d+) of (\d+)", note).group(2))
+    assert n_pairs > 1
+    # a cap equal to the pair count truncates nothing
+    write_tree(tmp_path / "exact", TREE)
+    r = scan(_cfg(tmp_path / "exact", endpoint, typesafe_max_pairs=n_pairs))
+    assert not any("pair cap" in n or "lane incomplete" in n for n in r.corpus.notes)
+    # a smaller cap does, and an incomplete lane must not count as ran
+    write_tree(tmp_path / "capped", TREE)
+    r = scan(_cfg(tmp_path / "capped", endpoint, typesafe_max_pairs=1))
+    assert any("pair cap reached" in n for n in r.corpus.notes)
+    assert any("lane incomplete" in n for n in r.corpus.notes)
+
+
+def test_nli_merges_with_the_typesafe_band_and_skips_cleared_pairs(
+    tmp_path: Path, server, monkeypatch
+):
+    """With --typesafe --nli --jury the NLI filter neither drops TypeSafe's
+    band (when it would clear those pairs) nor re-adds pairs TypeSafe cleared
+    (when it would flag them): the jury sees exactly TypeSafe's band."""
+    scripted, endpoint = server
+    monkeypatch.setenv("TS_TEST_KEY", "test-key")
+    seen: dict = {}
+
+    class FakeScorer:
+        def __init__(self, model_name=None):
+            pass
+
+        def contradiction_scores(self, pairs):
+            seen.setdefault("scored", []).extend(pairs)
+            return [seen["score"]] * len(pairs)
+
+    monkeypatch.setattr("detangle.lanes.nli.NliScorer", FakeScorer)
+    captured = {}
+
+    def fake_jury(cfg, ctx, findings):
+        captured["band"] = list(getattr(ctx, "nli_not_cleared", None) or [])
+        return findings
+
+    monkeypatch.setattr("detangle.lanes.jury.run_jury_lane", fake_jury)
+    for score in (0.0, 0.99):
+        seen["score"] = score
+        root = tmp_path / f"nli-{score}"
+        write_tree(root, TREE)
+        # tau above the scripted mass: the lint/test pair is TypeSafe's band,
+        # every other pair is cleared
+        r = scan(
+            _cfg(
+                root,
+                endpoint,
+                lane_nli=True,
+                lane_jury=True,
+                typesafe_tau=0.99,
+                typesafe_strong=0.995,
+            )
+        )
+        assert any("NLI lane:" in n for n in r.corpus.notes)
+        assert [round(m, 2) for _, m in captured["band"]] == [0.97], (score, captured["band"])
+    # whatever NLI scored (it sees normalized text), it never saw a pair
+    # TypeSafe had cleared
+    for a, b in seen.get("scored", []):
+        both = (a + " " + b).lower()
+        assert "linter first" in both and "start with the test suite" in both
+
+
 def test_verdict_uses_min_mass_and_mean_class_and_detects_redundancy():
     base = dict.fromkeys(RELATION_CRITERIA, 0.0)
     # orderings disagree on flavor: the MEAN distribution picks the class,
@@ -264,6 +448,10 @@ def test_verdict_uses_min_mass_and_mean_class_and_detects_redundancy():
     assert _verdict({"probs": red, "probs_swapped": red})[0] == "DTR01"
     weak_red = dict(base, redundant=0.65, distinct=0.35)  # below the 0.7 bar
     assert _verdict({"probs": weak_red, "probs_swapped": weak_red})[0] != "DTR01"
+    # a solo pass alone cannot call a pair redundant that the batched pass saw
+    # as a conflict: both passes must agree, as for conflicts
+    solo_red = {"probs": red, "probs_swapped": red, "batched_mass": 0.45, "batched_redundant": 0.0}
+    assert _verdict(solo_red)[0] != "DTR01"
 
 
 def test_config_parsing_and_validation(tmp_path: Path):

@@ -79,8 +79,8 @@ def scan_tree(
 ) -> ScanResult:
     """Materialize into a temp dir and run the pipeline.
 
-    ``lanes`` may include "nli", "jury", and/or "screen" (screen implies
-    jury). Jury calls are capped per tree by ``jury_max_pairs``; model
+    ``lanes`` may include "nli", "jury", "screen" (screen implies jury)
+    and/or "typesafe". Jury calls are capped per tree by ``jury_max_pairs``; model
     overrides are backend-shaped strings ("sonnet", "opus", ...).
     """
     with tempfile.TemporaryDirectory(prefix="detangle-bench-") as td:
@@ -583,8 +583,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--lanes",
         default="",
-        help='comma-separated optional lanes for the HOLDOUT scans, e.g. "nli,jury" '
-        "(the mutation suite always runs deterministic-only; jury needs a backend)",
+        help='comma-separated optional lanes for the HOLDOUT scans, e.g. "nli,jury" or '
+        '"typesafe" (the mutation suite always runs deterministic-only; jury needs a '
+        "backend, typesafe needs TYPESAFE_API_KEY)",
     )
     p.add_argument("--jury-model", default="", help="jury model override (backend-shaped)")
     p.add_argument("--screen-model", default="", help="screen model override (backend-shaped)")

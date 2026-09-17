@@ -1,6 +1,6 @@
 # Analysis lanes
 
-detangle runs up to four analysis lanes. The design follows the contradiction-detection
+detangle runs up to five analysis lanes. The design follows the contradiction-detection
 literature's cascade result: deterministic rules for what rules do best (negation, antonymy,
 numbers, scopes), an NLI cross-encoder as a *recall filter*, a strong-model **screen** as a
 whole-config *nominator*, and an LLM jury as the only tier allowed to issue semantic
@@ -12,9 +12,9 @@ verdicts. Each lane is honest about what it can and cannot do.
 | **NLI** | opt-in (`--nli` / `lanes.nli = true`) | local CPU/GPU inference | model download on first run | Recall filter and confidence signal — never a verdict-giver |
 | **Screen** | opt-in (`--screen` / `lanes.screen = true`; implies jury) | one strong-model call per ~150 units | yes | Whole-config sweep that *nominates* suspicious pairs for the jury — never a verdict-giver |
 | **Jury** | opt-in (`--jury` / `lanes.jury = true`) | LLM API calls | yes | Schema-constrained adjudication of pre-extracted candidate pairs |
-| **TypeSafe** | opt-in (`--typesafe` / `lanes.typesafe = true`; `TYPESAFE_API_KEY`) | ~100 pairs per call, seconds per config | yes | Calibrated typed pair judgments: a verdict-giver with probabilities, thresholded — hands its uncertain band to the jury |
+| **TypeSafe** | opt-in (`--typesafe` / `lanes.typesafe = true`; `TYPESAFE_API_KEY`) | `pairs_per_call` (default 20) pairs per call, each in both orderings, plus one small call per band pair; seconds per config | yes | Calibrated typed pair judgments: a verdict-giver with probabilities, thresholded — hands its uncertain band to the jury |
 
-A planned fourth lane — the **formal lane** (clingo/ASP + Z3 for the formalizable subset, with
+A planned **formal lane** (clingo/ASP + Z3 for the formalizable subset, with
 unsat-core witnesses) — is what the reserved codes DTC06 and DTC07 are waiting for. It does not
 exist yet.
 
@@ -366,11 +366,14 @@ distinct* — and reads back a probability distribution over those classes. Two 
 make it a different kind of lane:
 
 - **Batching.** Every question in a request is evaluated in parallel against one shared
-  `state` (the config's units with file/layer/activation metadata), so ~100 pairs — each
-  asked in **both orderings** — ride in one call. The 49-tree holdout adjudicates in about
-  30 seconds; the deep opus+opus cascade took hours.
+  `state` (the config's units with file/layer/activation metadata), so a batch of
+  `pairs_per_call` pairs (default 20; the request budget caps a batch at roughly 30) — each
+  asked in **both orderings** — rides in one call. The 49-tree holdout adjudicates in about
+  20 seconds; the deep opus+opus cascade took hours.
 - **Calibration.** Emission is thresholded on the returned probabilities
-  (`[detangle.typesafe] tau`, default 0.7; `strong` 0.9 for warning severity), and the
+  (`[detangle.typesafe] tau`, default 0.7; at or above `strong`, 0.9, a verdict is a
+  `warning` — except conditional conflicts and goal tension, which stay advisory just as the
+  jury's conditional verdicts do), and the
   conflict mass used is the *minimum* across the two orderings — the jury's order-swap
   guard at no extra round trip — and the class is the argmax of the two orderings' mean
   distribution (single-ordering argmaxes flip on near-ties; the mean does not).
@@ -384,7 +387,7 @@ make it a different kind of lane:
   and account, precedence kind and account from the activation model — with a note that
   being loaded together is not by itself a clash. Measured: +1 holdout case (the
   overlapping-glob precedence pair went from 0.45 to 0.96) on top of the rich vocabulary,
-  +3 with the earlier 4-option vocabulary in the prompt ablation, 0 false positives, ~1.5×
+  +3 with a 4-option ablation vocabulary in the prompt ablation, 0 false positives, ~1.5×
   the question tokens. Structured criteria objects, an inverted "can it comply with both"
   framing, a statement framing and a 4-level severity Score question were also measured;
   none beat it.
