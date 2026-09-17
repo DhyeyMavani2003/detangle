@@ -235,9 +235,12 @@ shipped lane issues plain synchronous calls.
 
 ### Determinism
 
-**Determinism is protocol-engineered, never assumed.** Temperature is set to 0, but temp-0 API
-calls are still nondeterministic in general (batch non-invariance; 1,000 greedy completions
-have been observed to yield 80 distinct outputs). What actually makes jury results stable:
+**Determinism is protocol-engineered, never assumed.** Temperature is set to 0 wherever the
+transport still accepts one (the 1.x Anthropic SDK, the Claude 5 API generation, has no
+sampling parameters at all; the backend sends `temperature` only when the installed SDK's
+`messages.create` accepts it), but temp-0 API calls are still nondeterministic in general
+(batch non-invariance; 1,000 greedy completions have been observed to yield 80 distinct
+outputs). What actually makes jury results stable:
 
 - the closed verdict **enum** (no free-text judgments),
 - the **order-swap + abstain** rule (order-sensitive verdicts become NEEDS_HUMAN instead of
