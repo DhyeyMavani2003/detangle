@@ -258,7 +258,7 @@ backend on the novel-phrasing holdout — 30 conflict + 19 benign trees
 | NLI + jury (`sonnet`) | 7/30 (23%) | 11/30 (37%) | 2/19 |
 | NLI + screen (`opus`) + jury (`sonnet`) | 17/30 (57%) | **27/30 (90%)** | 4/19 |
 | NLI + screen (`opus`) + jury (`opus`) | 20/30 (67%) | **27/30 (90%)** | 2/19 |
-| TypeSafe lane (`--typesafe`, ~30 s total) | **26/30 (87%)** | 26/30 (87%) | **0/19** |
+| TypeSafe lane (`--typesafe`, ~20 s total) | **27/30 (90%)** | 27/30 (90%) | **0/19** |
 
 Two structural lessons in that table. First, a pair-level jury plateaus at ~a third of
 conflicts regardless of juror strength — the bottleneck is candidate formation, which is
@@ -361,9 +361,9 @@ detangle scan --typesafe --jury     # ...and the uncertain band goes to a genera
 The jury asks a generative model to *write* a verdict and parses it. This lane instead asks
 a System One decision model (TypeSafe's Jev) one typed **Choice** question per instruction
 pair — *classify the relationship: contradictory / conditional conflict / numeric-limit
-conflict / format conflict / permit-vs-forbid / redundant / distinct* — and reads back a
-probability distribution over those classes. Two properties make it a different kind of
-lane:
+conflict / format conflict / permit-vs-forbid / order conflict / goal tension / redundant /
+distinct* — and reads back a probability distribution over those classes. Two properties
+make it a different kind of lane:
 
 - **Batching.** Every question in a request is evaluated in parallel against one shared
   `state` (the config's units with file/layer/activation metadata), so ~100 pairs — each
@@ -372,26 +372,37 @@ lane:
 - **Calibration.** Emission is thresholded on the returned probabilities
   (`[detangle.typesafe] tau`, default 0.7; `strong` 0.9 for warning severity), and the
   conflict mass used is the *minimum* across the two orderings — the jury's order-swap
-  guard at no extra round trip. A class disagreement between orderings softens the code to
-  the conditional reading; `numeric_limit_conflict` → DTC03, `format_conflict` → DTC04,
-  `permit_vs_forbid` → DTC05, `contradictory` → DTC01, `conditional_conflict` → DTC02,
-  `redundant` → DTR01 (advisory); a structural overlay then mirrors the deterministic
-  router — a conditionally-loaded layer (skill, subagent) vs another layer is DTP04, two
-  overlapping path-scoped rules DTP02.
+  guard at no extra round trip — and the class is the argmax of the two orderings' mean
+  distribution (single-ordering argmaxes flip on near-ties; the mean does not).
+  `numeric_limit_conflict` → DTC03, `format_conflict` → DTC04, `permit_vs_forbid` → DTC05,
+  `contradictory` → DTC01, `conditional_conflict` and `order_conflict` → DTC02,
+  `goal_tension` → DTC08, `redundant` → DTR01 (advisory); a structural overlay then mirrors
+  the deterministic router — a conditionally-loaded layer (skill, subagent) vs another
+  layer is DTP04, two overlapping path-scoped rules DTP02.
+- **The question carries the co-activation account.** Each relation question includes
+  detangle's own account of *when* the two units are loaded together — co-activation class
+  and account, precedence kind and account from the activation model — with a note that
+  being loaded together is not by itself a clash. Measured: +1 holdout case (the
+  overlapping-glob precedence pair went from 0.45 to 0.96) on top of the rich vocabulary,
+  +3 with the earlier 4-option vocabulary in the prompt ablation, 0 false positives, ~1.5×
+  the question tokens. Structured criteria objects, an inverted "can it comply with both"
+  framing, a statement framing and a 4-level severity Score question were also measured;
+  none beat it.
 
 **Measured (2026-09-17, novel-phrasing holdout, `python -m benchmarks.run_eval --holdout
---lanes typesafe`):** **26/30 strict (87%), 26/30 class-lenient (87%), 0/19 false
-positives** — above the opus-screen + opus-jury row (20/30, 27/30, 2/19) at a fraction of
+--lanes typesafe`):** **27/30 strict (90%), 27/30 class-lenient (90%), 0/19 false
+positives** in ~20 s — the opus-screen + opus-jury cascade's lenient recall (27/30) with 0
+instead of 2 false positives and seven more strict hits than its 20/30, at a fraction of
 the cost, and with **zero false positives at every threshold tried** (0.5–0.95) across every
-question-style ablation. The four misses are structurally outside a pair question: two
-skill-routing-ambiguity cases (DTS01 lives in trigger descriptions), a drifted near-duplicate
-(DTR02), and a glob-intersection precedence case (DTP02).
+question-style ablation. The three misses are structurally outside a pair question: two
+skill-routing-ambiguity cases (DTS01 lives in trigger descriptions) and a drifted
+near-duplicate (DTR02).
 
 Two design facts the experiments established:
 
 - **Extraction is the ceiling, not judgment.** With the precision-first extractor's strict
   units the same lane reaches 11/30; with high-recall extraction (switched on
-  automatically, like the screen) 19–26/30. The dropped sentences are exactly the
+  automatically, like the screen) 19–27/30. The dropped sentences are exactly the
   procedural ones ("run the db-migrate skill to completion before starting the deploy
   skill") — TypeSafe's own is-instruction judgment flags them at p≥0.9.
 - **Pair set.** `pairs = "all"` judges every co-activatable unit pair (O(n²): ~8,000 pairs
@@ -403,13 +414,14 @@ Two design facts the experiments established:
   above `uncertain_low` is re-asked *alone* — a two-unit state, the same two questions
   (`rejudge = true`). The solo verdict decides clearing and the class; a pair **fires only
   when both passes see the conflict**. Measured on the demo agent (2,665 candidate pairs,
-  131 re-asked in 131 small calls, ~50 s): 58 of the 116 band pairs cleared — none of them
-  a conflict a human had marked `open` in the triage baseline — so the jury receives half
-  the pairs; the four planted pairs the lane owns stayed emitted and sharpened (C4
-  0.86 → 0.90, C14 0.80 → 0.86). Letting the solo verdict *replace* the batched one was
-  measured and rejected: it promoted ten borderline pairs, three of which a human had
-  already triaged as not conflicts, for one genuine emergent conflict — which the jury
-  finds from the band anyway.
+  116 re-asked in 116 small calls, ~50 s): 55 of the 109 band pairs cleared, so the jury
+  receives half the pairs; the four planted pairs the lane owns stayed emitted, and one
+  batched emit a human had triaged as not a conflict dropped to the band. The cost: one of
+  the 55 cleared pairs was a soft goal-tension pair a human had marked `open` (the jury
+  would otherwise have seen it) — set `rejudge = false` to hand the whole band on. Letting
+  the solo verdict *replace* the batched one was measured and rejected: it promoted ten
+  borderline pairs, three of which a human had already triaged as not conflicts, for one
+  genuine emergent conflict — which the jury finds from the band anyway.
 
 **What it cannot do.** A pair question sees two sentences. Conflicts carried by *list
 position* across several lines (a skill whose steps are ordered tests → typecheck → lint

@@ -54,6 +54,8 @@ class _Scripted:
         answers = {}
         for qid, q in body["questions"].items():
             assert q["type"] == "choice" and q["criteria"] == RELATION_CRITERIA
+            # the question carries the pair's co-activation account and precedence
+            assert set(q["instructions"]["co_activation"]) == {"class", "account", "precedence"}
             _, a, b = qid.split("_", 2)
             texts = units[a]["text"] + " " + units[b]["text"]
             if "linter first" in texts and "Start with the test suite" in texts:

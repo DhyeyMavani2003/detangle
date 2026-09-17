@@ -241,7 +241,7 @@ python -m benchmarks.run_eval
   | NLI + jury (`sonnet`) | 7/30 (23%) | 11/30 (37%) | 2/19* |
   | NLI + screen (`opus`) + jury (`sonnet`) | 17/30 (57%) | **27/30 (90%)** | 4/19* |
   | NLI + screen (`opus`) + jury (`opus`) | 20/30 (67%) | **27/30 (90%)** | 2/19* |
-  | TypeSafe lane (typed pair judgments, ~30 s total) | **26/30 (87%)** | 26/30 (87%) | **0/19 (0%)** |
+  | TypeSafe lane (typed pair judgments, ~20 s total) | **27/30 (90%)** | 27/30 (90%) | **0/19 (0%)** |
 
   \* every measured false positive, in every configuration, is a jury
   CONDITIONAL_CONFLICT — the model's "maybe" bucket — so those findings land at

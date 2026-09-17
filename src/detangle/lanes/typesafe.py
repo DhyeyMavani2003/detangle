@@ -148,9 +148,18 @@ _CONDITIONAL_LAYERS = {
     Layer.MCP_INSTRUCTIONS,
 }
 
-_PROMPT_VERSION = "relation-v3"
+_COACT_NOTE = (
+    "Each unit's `activation` field says when it is loaded: `always` units are in every "
+    "session; `path` units load when the agent touches a file matching `activation_globs`; "
+    "`model` units load when their `trigger` applies. `co_activation` below is the "
+    "situation in which both are loaded together, and `precedence` says whether the tool "
+    "resolves a disagreement between them. Judge the pair for that co-loaded situation; "
+    "being loaded together is not by itself a clash."
+)
+
+_PROMPT_VERSION = "relation-v4-coact"
 _PROMPT_HASH = hashlib.sha256(
-    (_PROMPT_VERSION + json.dumps(RELATION_CRITERIA, sort_keys=True)).encode()
+    (_PROMPT_VERSION + _COACT_NOTE + json.dumps(RELATION_CRITERIA, sort_keys=True)).encode()
 ).hexdigest()[:12]
 
 # request sizing: the API budget is ~32k tokens shared by state + questions
@@ -236,15 +245,28 @@ def _unit_record(u: InstructionUnit) -> dict:
     return rec
 
 
-def _question(a_id: str, b_id: str) -> dict:
+def _question(a_id: str, b_id: str, pair: UnitPair) -> dict:
+    """One relation question. The instructions carry detangle's own account of
+    WHEN the two units are loaded together and whether the tool resolves a
+    disagreement between them — the judgment is for that co-loaded situation,
+    which is what lets the model see a clash between two path-scoped rules
+    whose globs intersect."""
     return {
         "type": "choice",
-        "instructions": (
-            f"Classify the relationship between `units.{a_id}` and `units.{b_id}` for an AI "
-            "coding agent that has both active in its context at once. Pick the single "
-            "option that best names the mechanism of the clash, or distinct/redundant when "
-            "there is no clash."
-        ),
+        "instructions": {
+            "question": (
+                f"Classify the relationship between `units.{a_id}` and `units.{b_id}` for an "
+                "AI coding agent that has both active in its context at once. Pick the single "
+                "option that best names the mechanism of the clash, or distinct/redundant "
+                "when there is no clash."
+            ),
+            "co_activation": {
+                "class": pair.co_active.value,
+                "account": pair.co_activation_account,
+                "precedence": f"{pair.precedence.kind.value}: {pair.precedence.account}",
+            },
+            "note": _COACT_NOTE,
+        },
         "criteria": RELATION_CRITERIA,
     }
 
@@ -314,7 +336,7 @@ def judge_pairs(
             trial.setdefault(p.a.uid, _unit_record(p.a))
             trial.setdefault(p.b.uid, _unit_record(p.b))
             if chunk and (
-                _estimate_tokens(trial) + (len(chunk) + 1) * 150 > _BUDGET_TOKENS
+                _estimate_tokens(trial) + (len(chunk) + 1) * 400 > _BUDGET_TOKENS
                 or len(chunk) >= pairs_per_call
             ):
                 break
@@ -324,8 +346,8 @@ def judge_pairs(
         state = {"units": used}
         questions: dict = {}
         for p in chunk:
-            questions[f"r_{p.a.uid}_{p.b.uid}"] = _question(p.a.uid, p.b.uid)
-            questions[f"r_{p.b.uid}_{p.a.uid}"] = _question(p.b.uid, p.a.uid)
+            questions[f"r_{p.a.uid}_{p.b.uid}"] = _question(p.a.uid, p.b.uid, p)
+            questions[f"r_{p.b.uid}_{p.a.uid}"] = _question(p.b.uid, p.a.uid, p)
         answers = client.evaluate(state, questions)
         for p in chunk:
             fwd = answers.get(f"r_{p.a.uid}_{p.b.uid}") or {}
