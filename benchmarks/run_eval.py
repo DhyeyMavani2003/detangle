@@ -90,6 +90,7 @@ def scan_tree(
         cfg.lane_nli = "nli" in lanes
         cfg.lane_jury = "jury" in lanes
         cfg.lane_screen = "screen" in lanes
+        cfg.lane_typesafe = "typesafe" in lanes
         cfg.jury_max_pairs = jury_max_pairs
         if jury_model:
             cfg.jury_model = jury_model

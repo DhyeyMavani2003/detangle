@@ -67,6 +67,12 @@ def _build_parser() -> argparse.ArgumentParser:
             help="enable the whole-config LLM screen sweep (implies --jury; strongest model)",
         )
         sp.add_argument(
+            "--typesafe",
+            action="store_true",
+            help="enable the TypeSafe lane: calibrated pairwise conflict judgments "
+            "(needs TYPESAFE_API_KEY)",
+        )
+        sp.add_argument(
             "--deep",
             action="store_true",
             help="thoroughness-first pass: every available lane, per-class screen "
@@ -266,6 +272,8 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
         cfg.lane_jury = True
     if args.screen:
         cfg.lane_screen = True
+    if args.typesafe:
+        cfg.lane_typesafe = True
     if args.deep:
         cfg.deep = True
     if args.baseline is not None:

@@ -69,8 +69,9 @@ What makes the analysis different from a format linter:
 - **Witness scenarios.** For conditional conflicts, the finding includes the boundary
   condition under which both instructions apply and cannot be jointly satisfied.
 - **Deterministic core.** The default mode uses zero LLM calls, zero network, and is fully
-  reproducible — safe for CI and air-gapped repos. Optional NLI, LLM-screen, and LLM-jury
-  lanes add semantic depth (see [docs/lanes.md](docs/lanes.md)).
+  reproducible — safe for CI and air-gapped repos. Optional NLI, LLM-screen, LLM-jury, and
+  TypeSafe (typed, calibrated pair judgments — the holdout's best recall at zero false
+  positives, in seconds) lanes add semantic depth (see [docs/lanes.md](docs/lanes.md)).
 - **Procedural conflicts.** The optional screen lane (`--screen`) has a strong model read the
   whole config — always-on files *and* the skill bodies that join the context when a skill
   fires — and nominate order/process conflicts (lint-before-test vs test-before-lint,
@@ -132,6 +133,13 @@ model = "qwen3:8b"
 `auto`'s detection order is `ANTHROPIC_API_KEY` → `claude` CLI on PATH → configured
 `base_url`. If you have the Claude CLI installed but want a different provider, set
 `backend = "openai"` explicitly.
+
+```bash
+# TypeSafe (typed, calibrated pair judgments — a separate lane, not a jury backend):
+export TYPESAFE_API_KEY=...
+detangle scan --typesafe            # seconds per config, 0 measured false positives
+detangle scan --typesafe --jury     # TypeSafe decides what it can; the jury gets the rest
+```
 
 (`pip install git+https://github.com/DhyeyMavani2003/detangle` also works once this code
 is on the default branch.)
@@ -232,7 +240,8 @@ python -m benchmarks.run_eval
   | NLI + jury (`haiku`) | 8/30 (27%) | 10/30 (33%) | 1/19* |
   | NLI + jury (`sonnet`) | 7/30 (23%) | 11/30 (37%) | 2/19* |
   | NLI + screen (`opus`) + jury (`sonnet`) | 17/30 (57%) | **27/30 (90%)** | 4/19* |
-  | NLI + screen (`opus`) + jury (`opus`) | **20/30 (67%)** | **27/30 (90%)** | 2/19* |
+  | NLI + screen (`opus`) + jury (`opus`) | 20/30 (67%) | **27/30 (90%)** | 2/19* |
+  | TypeSafe lane (typed pair judgments, ~30 s total) | **23/30 (77%)** | 26/30 (87%) | **0/19 (0%)** |
 
   \* every measured false positive, in every configuration, is a jury
   CONDITIONAL_CONFLICT — the model's "maybe" bucket — so those findings land at

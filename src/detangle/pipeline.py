@@ -75,9 +75,10 @@ def scan(cfg: Config) -> ScanResult:
     corpus = discover(cfg)
     t_discover = time.monotonic()
 
-    # the screen lane reasons over weak/hedged sentences too (high-recall
-    # extraction); deterministic detectors still only use strict instructions
-    units = extract_all_units(corpus, keep_descriptive=cfg.lane_screen)
+    # the screen and typesafe lanes reason over weak/hedged sentences too
+    # (high-recall extraction); deterministic detectors still only use strict
+    # instructions
+    units = extract_all_units(corpus, keep_descriptive=cfg.lane_screen or cfg.lane_typesafe)
     t_extract = time.monotonic()
 
     pairs = generate_pairs(units, cfg)
@@ -93,6 +94,10 @@ def scan(cfg: Config) -> ScanResult:
 
     # optional lanes refine/extend deterministic findings; their output goes
     # through the same rule-enable/severity-override filter as detectors
+    if cfg.lane_typesafe:
+        from .lanes.typesafe import run_typesafe_lane
+
+        findings = enabled_findings(ctx, run_typesafe_lane(cfg, ctx, findings))
     if cfg.lane_nli:
         from .lanes.nli import run_nli_lane
 
