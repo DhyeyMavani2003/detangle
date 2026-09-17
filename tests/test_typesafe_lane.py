@@ -125,7 +125,10 @@ def test_lane_emits_batched_swapped_verdicts_and_caches(tmp_path: Path, server, 
     ts = [f for f in r1.findings if "typesafe" in f.lanes]
     assert len(ts) == 1, [f.message for f in r1.findings]
     f = ts[0]
-    assert f.code == "DTC01" and f.severity.label == "warning"
+    # memory vs skill with no documented precedence: the structural overlay
+    # routes it as a cross-layer collision, exactly as the deterministic router does
+    assert f.code == "DTP04" and f.severity.label == "warning"
+    assert "contradictory" in f.message
     assert {ev.span.path for ev in f.evidence} == set(TREE)
     assert scripted.calls == 1, "all pairs of a small config batch into one request"
     # every pair asked in both orderings inside that one request
@@ -180,17 +183,25 @@ def test_uncertain_band_goes_to_jury_channel(tmp_path: Path, server, monkeypatch
     assert mass == pytest.approx(0.97)
 
 
-def test_verdict_softens_on_class_disagreement_and_detects_redundancy():
+def test_verdict_uses_min_mass_and_mean_class_and_detects_redundancy():
     base = dict.fromkeys(RELATION_CRITERIA, 0.0)
+    # orderings disagree on flavor: the MEAN distribution picks the class,
+    # the MIN conflict mass gates emission
     fwd = dict(base, contradictory=0.8, conditional_conflict=0.15, distinct=0.05)
     rev = dict(base, contradictory=0.2, conditional_conflict=0.7, distinct=0.1)
     code, mass, cls = _verdict({"probs": fwd, "probs_swapped": rev})
-    assert code == "DTC02" and cls == "conditional_conflict"
+    assert code == "DTC01" and cls == "contradictory"  # mean 0.5 vs 0.425
     assert mass == pytest.approx(min(_conflict_mass(fwd), _conflict_mass(rev)))
     num = dict(base, numeric_limit_conflict=0.9, distinct=0.1)
     assert _verdict({"probs": num, "probs_swapped": num})[0] == "DTC03"
+    order = dict(base, order_conflict=0.95, distinct=0.05)
+    assert _verdict({"probs": order, "probs_swapped": order})[0] == "DTC02"
+    soft = dict(base, goal_tension=0.9, distinct=0.1)
+    assert _verdict({"probs": soft, "probs_swapped": soft})[0] == "DTC08"
     red = dict(base, redundant=0.85, distinct=0.15)
     assert _verdict({"probs": red, "probs_swapped": red})[0] == "DTR01"
+    weak_red = dict(base, redundant=0.65, distinct=0.35)  # below the 0.7 bar
+    assert _verdict({"probs": weak_red, "probs_swapped": weak_red})[0] != "DTR01"
 
 
 def test_config_parsing_and_validation(tmp_path: Path):

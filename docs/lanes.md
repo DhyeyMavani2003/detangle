@@ -258,7 +258,7 @@ backend on the novel-phrasing holdout — 30 conflict + 19 benign trees
 | NLI + jury (`sonnet`) | 7/30 (23%) | 11/30 (37%) | 2/19 |
 | NLI + screen (`opus`) + jury (`sonnet`) | 17/30 (57%) | **27/30 (90%)** | 4/19 |
 | NLI + screen (`opus`) + jury (`opus`) | 20/30 (67%) | **27/30 (90%)** | 2/19 |
-| TypeSafe lane (`--typesafe`, ~30 s total) | **23/30 (77%)** | 26/30 (87%) | **0/19** |
+| TypeSafe lane (`--typesafe`, ~30 s total) | **26/30 (87%)** | 26/30 (87%) | **0/19** |
 
 Two structural lessons in that table. First, a pair-level jury plateaus at ~a third of
 conflicts regardless of juror strength — the bottleneck is candidate formation, which is
@@ -375,20 +375,23 @@ lane:
   guard at no extra round trip. A class disagreement between orderings softens the code to
   the conditional reading; `numeric_limit_conflict` → DTC03, `format_conflict` → DTC04,
   `permit_vs_forbid` → DTC05, `contradictory` → DTC01, `conditional_conflict` → DTC02,
-  `redundant` → DTR01 (advisory).
+  `redundant` → DTR01 (advisory); a structural overlay then mirrors the deterministic
+  router — a conditionally-loaded layer (skill, subagent) vs another layer is DTP04, two
+  overlapping path-scoped rules DTP02.
 
 **Measured (2026-09-17, novel-phrasing holdout, `python -m benchmarks.run_eval --holdout
---lanes typesafe`):** **23/30 strict (77%), 26/30 class-lenient (87%), 0/19 false
+--lanes typesafe`):** **26/30 strict (87%), 26/30 class-lenient (87%), 0/19 false
 positives** — above the opus-screen + opus-jury row (20/30, 27/30, 2/19) at a fraction of
 the cost, and with **zero false positives at every threshold tried** (0.5–0.95) across every
-question-style ablation. The four strict misses are two skill-routing-ambiguity cases
-(DTS01 is not a pair-conflict question) and two class-mismatches.
+question-style ablation. The four misses are structurally outside a pair question: two
+skill-routing-ambiguity cases (DTS01 lives in trigger descriptions), a drifted near-duplicate
+(DTR02), and a glob-intersection precedence case (DTP02).
 
 Two design facts the experiments established:
 
 - **Extraction is the ceiling, not judgment.** With the precision-first extractor's strict
   units the same lane reaches 11/30; with high-recall extraction (switched on
-  automatically, like the screen) 19–23/30. The dropped sentences are exactly the
+  automatically, like the screen) 19–26/30. The dropped sentences are exactly the
   procedural ones ("run the db-migrate skill to completion before starting the deploy
   skill") — TypeSafe's own is-instruction judgment flags them at p≥0.9.
 - **Pair set.** `pairs = "all"` judges every co-activatable unit pair (O(n²): ~8,000 pairs

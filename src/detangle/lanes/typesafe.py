@@ -15,8 +15,12 @@ relationship classes. Two properties make it a different kind of lane:
 
 Each pair is asked in BOTH orderings inside the same request (the jury's
 order-swap guard, at no extra round trip); the conflict mass used for
-emission is the minimum across the two, and a class disagreement softens
-the code to the conditional reading.
+emission is the minimum across the two, and the class is the argmax of the
+two orderings' mean distribution (single-ordering argmaxes flip on near
+ties; the mean does not). A structural overlay then mirrors the
+deterministic router: conditionally-loaded layer vs another layer is a
+cross-layer collision (DTP04), overlapping path-scoped rules a precedence
+ambiguity (DTP02).
 
 Composability: pairs judged confidently are claimed; pairs whose conflict
 mass lands in the uncertain band are handed to the jury lane (when enabled)
@@ -37,11 +41,11 @@ import time
 import urllib.error
 import urllib.request
 
-from ..activation import build_pair
+from ..activation import build_pair, scope_relation
 from ..config import Config
 from ..detectors.base import AnalysisContext
 from ..findings import Finding, pair_evidence
-from ..ir import CoActiveClass, InstructionUnit, UnitPair
+from ..ir import ActivationMode, CoActiveClass, InstructionUnit, Layer, UnitPair
 from ..taxonomy import Severity
 from .backends import JuryError
 from .cachekey import make_cache
@@ -52,19 +56,53 @@ DEFAULT_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 # options; values are the rubric the model sees. Order-independent.
 RELATION_CRITERIA = {
     "contradictory": (
-        "Incompatible prescriptions for the same situation; following one forces "
-        "violating the other (including opposite step orders: A before B vs B before A)."
+        "Both apply to the same situation unconditionally and require incompatible things "
+        "(do X vs never do X; use tool A vs use tool B for the same job; ask first vs act "
+        "immediately). Not for disagreements about a number, an output format, the order "
+        "of steps, or a permission — those have their own options."
     ),
     "conditional_conflict": (
-        "Each satisfiable alone, but jointly unsatisfiable when a specific condition holds."
+        "Compatible in general, but they clash whenever a specific named condition holds "
+        "(during a code freeze, during an incident, on the release branch, for files in "
+        "both scopes): one side's guard carves out a situation in which the other cannot "
+        "be followed."
     ),
     "numeric_limit_conflict": (
-        "Both set a numeric limit for the same quantity and the limits cannot both hold."
+        "Both put a number, count, size or duration on the same knob and the two bounds "
+        "cannot both hold (cap at 88 vs wrap past 120; at least 300 words vs no more than "
+        "150; five minutes vs 90 seconds for the same timeout). Use this, not "
+        "contradictory, whenever the disagreement is about a numeric value."
     ),
-    "format_conflict": "They require mutually exclusive output formats for the same artifact.",
-    "permit_vs_forbid": "One explicitly permits an action the other explicitly forbids.",
-    "redundant": "The same prescription stated twice in different words (entail each other).",
-    "distinct": "Compatible: different matters, or one refines/scopes the other without contradiction.",
+    "format_conflict": (
+        "Both dictate the shape or serialization of the same output and the shapes are "
+        "exclusive (plain prose vs bulleted list; bare JSON vs Markdown report; with vs "
+        "without headings). Not for wording, tone, tense or content — only the format."
+    ),
+    "permit_vs_forbid": (
+        "One side explicitly allows or invites an action (may, it's fine to, feel free, "
+        "you're welcome to, without asking) and the other forbids that same action or "
+        "requires approval for it, on the same object and scope. Not for two obligations "
+        "that clash (that is contradictory)."
+    ),
+    "order_conflict": (
+        "Both prescribe the order of the same two steps and disagree (lint then test vs "
+        "test then lint; changelog before version bump vs bump first). Not for steps of "
+        "different pipelines or before/after steps that chain compatibly."
+    ),
+    "goal_tension": (
+        "Two soft preferences about degree or style (how brief, how thorough, how much "
+        "to change) that can both be literally obeyed but pull against each other, so "
+        "doing more of one means less of the other. Not for a specific action one side "
+        "requires and the other rules out."
+    ),
+    "redundant": (
+        "The same prescription stated twice in different words (they entail each other); "
+        "no disagreement at all."
+    ),
+    "distinct": (
+        "Compatible: different subjects, objects or scopes; one refines or narrows the "
+        "other; or an explicit exception to it. Both can always be followed together."
+    ),
 }
 CONFLICT_CLASSES = (
     "contradictory",
@@ -72,6 +110,8 @@ CONFLICT_CLASSES = (
     "numeric_limit_conflict",
     "format_conflict",
     "permit_vs_forbid",
+    "order_conflict",
+    "goal_tension",
 )
 _CODE_FOR = {
     "contradictory": "DTC01",
@@ -79,9 +119,23 @@ _CODE_FOR = {
     "numeric_limit_conflict": "DTC03",
     "format_conflict": "DTC04",
     "permit_vs_forbid": "DTC05",
+    "order_conflict": "DTC02",  # a process conflict: the taxonomy's conditional class
+    "goal_tension": "DTC08",
+}
+# classes whose code stays put under the structural overlay (the deterministic
+# router likewise routes numeric clashes and soft tension before layer tests)
+_OVERLAY_EXEMPT = {"numeric_limit_conflict", "goal_tension"}
+# layers that join the context conditionally: a clash between one of these and
+# any other layer is a cross-layer collision in the router's vocabulary
+_CONDITIONAL_LAYERS = {
+    Layer.SKILL,
+    Layer.SUBAGENT,
+    Layer.TOOL_DESC,
+    Layer.PLUGIN,
+    Layer.MCP_INSTRUCTIONS,
 }
 
-_PROMPT_VERSION = "relation-v1"
+_PROMPT_VERSION = "relation-v3"
 _PROMPT_HASH = hashlib.sha256(
     (_PROMPT_VERSION + json.dumps(RELATION_CRITERIA, sort_keys=True)).encode()
 ).hexdigest()[:12]
@@ -174,7 +228,9 @@ def _question(a_id: str, b_id: str) -> dict:
         "type": "choice",
         "instructions": (
             f"Classify the relationship between `units.{a_id}` and `units.{b_id}` for an AI "
-            "coding agent that has both active in its context at once."
+            "coding agent that has both active in its context at once. Pick the single "
+            "option that best names the mechanism of the clash, or distinct/redundant when "
+            "there is no clash."
         ),
         "criteria": RELATION_CRITERIA,
     }
@@ -266,24 +322,41 @@ def judge_pairs(
 
 
 def _verdict(rec: dict) -> tuple[str | None, float, str]:
-    """(code or None, conflict mass, class) from a judged pair record."""
+    """(code or None, conflict mass, class) from a judged pair record.
+
+    Conflict mass is the minimum over the two orderings (position-bias guard).
+    The class is the argmax over the MEAN of both orderings' distributions —
+    the orderings' argmaxes flip on near-ties, the mean does not."""
     probs = rec["probs"]
-    mass = _conflict_mass(probs)
-    cls = max(CONFLICT_CLASSES, key=lambda c: probs.get(c, 0.0))
-    swapped = rec.get("probs_swapped")
-    if swapped:
-        mass = min(mass, _conflict_mass(swapped))
-        cls_sw = max(CONFLICT_CLASSES, key=lambda c: swapped.get(c, 0.0))
-        if cls_sw != cls:
-            # the orderings agree a conflict exists but not on its flavor:
-            # take the weaker conditional reading (mirrors the jury's rule)
-            cls = "conditional_conflict"
-    redundant = float(probs.get("redundant", 0.0))
-    if swapped:
-        redundant = min(redundant, float(swapped.get("redundant", 0.0)))
-    if redundant >= 0.6 and mass < 0.3:
+    swapped = rec.get("probs_swapped") or probs
+    mass = min(_conflict_mass(probs), _conflict_mass(swapped))
+    mean = {c: (probs.get(c, 0.0) + swapped.get(c, 0.0)) / 2 for c in CONFLICT_CLASSES}
+    cls = max(CONFLICT_CLASSES, key=lambda c: mean[c])
+    redundant = min(float(probs.get("redundant", 0.0)), float(swapped.get("redundant", 0.0)))
+    if redundant >= 0.7 and mass < 0.3:
         return "DTR01", redundant, "redundant"
     return _CODE_FOR[cls], mass, cls
+
+
+def _overlay(pair: UnitPair, code: str, cls: str) -> str:
+    """Mirror the deterministic router's structural routing on top of the
+    semantic class: a clash between a conditionally-loaded layer (skill,
+    subagent, tool description, plugin) and another layer is a cross-layer
+    collision (DTP04); two path-scoped rules whose globs partially overlap are
+    a precedence ambiguity (DTP02). Numeric clashes and soft tension keep
+    their own code, as they do in the router."""
+    if cls in _OVERLAY_EXEMPT:
+        return code
+    a, b = pair.a, pair.b
+    if a.layer != b.layer and (a.layer in _CONDITIONAL_LAYERS or b.layer in _CONDITIONAL_LAYERS):
+        return "DTP04"
+    if (
+        a.activation.mode == ActivationMode.PATH
+        and b.activation.mode == ActivationMode.PATH
+        and scope_relation(a, b) == "overlap"
+    ):
+        return "DTP02"
+    return code
 
 
 def run_typesafe_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) -> list[Finding]:
@@ -334,7 +407,11 @@ def run_typesafe_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]
             emitted += 1
             continue
         if mass >= cfg.typesafe_tau:
-            strong = mass >= cfg.typesafe_strong and cls != "conditional_conflict"
+            code = _overlay(pair, code, cls)
+            strong = mass >= cfg.typesafe_strong and cls not in (
+                "conditional_conflict",
+                "goal_tension",
+            )
             findings.append(
                 Finding(
                     code=code,
