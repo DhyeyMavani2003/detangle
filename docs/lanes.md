@@ -257,9 +257,11 @@ event — model aliases drift (a documented case degraded 84% → 51% in three m
 The full cascade was validated end-to-end in this repository on the novel-phrasing holdout
 — 30 conflict + 19 benign trees — with the `claude-cli` backend for the LLM rows
 (2026-08-31; `python -m benchmarks.run_eval --holdout --lanes ... --jury-model ...
---screen-model ...`) and against the TypeSafe API for the TypeSafe row (2026-09-17;
+--screen-model ...`), against the TypeSafe API for the TypeSafe row (2026-09-17;
 `--lanes typesafe` with `TYPESAFE_API_KEY` set; the `hybrid-eval` workflow reproduced it on a
-GitHub runner in 8 s):
+GitHub runner in 8 s), and through the Anthropic API for the rows marked so (2026-09-17; the
+`hybrid-eval` workflow on GitHub runners with `ANTHROPIC_API_KEY` set — `anthropic` backend,
+`claude-opus-5` screen, `claude-haiku-4-5-20251001` or `claude-opus-5` jury):
 
 | configuration | strict recall | class-lenient | FPs (all advisory-tier) |
 |---|---|---|---|
@@ -270,6 +272,16 @@ GitHub runner in 8 s):
 | NLI + screen (`opus`) + jury (`sonnet`) | 17/30 (57%) | **27/30 (90%)** | 4/19 |
 | NLI + screen (`opus`) + jury (`opus`) | 20/30 (67%) | **27/30 (90%)** | 2/19 |
 | TypeSafe lane (`--typesafe`, ~20 s total) | **27/30 (90%)** | 27/30 (90%) | **0/19** |
+| screen (`opus`) + jury (`haiku`) — Anthropic API, ~5 min | 16/30 (53%) | **27/30 (90%)** | 4/19 |
+| screen (`opus`) + jury (`opus`) — Anthropic API, ~10 min | 19/30 (63%) | **27/30 (90%)** | 3/19 |
+| TypeSafe + jury (`haiku`) — Anthropic API, ~20 s | **27/30 (90%)** | 27/30 (90%) | 1/19 |
+| TypeSafe + screen (`opus`) + jury (`haiku`) — Anthropic API, ~3 min | **27/30 (90%)** | 27/30 (90%) | 3/19 |
+
+The API rows reproduce the CLI rows within a few cases (the backends differ in model
+snapshot and transport, and jury conditional verdicts are the noisiest band), and they show
+that stacking the LLM cascade on the TypeSafe lane adds no holdout recall — only advisory
+conditional-conflict findings on benign trees, from the jury adjudicating TypeSafe's
+uncertain band (1/19) or the screen's nominations (3/19).
 
 Two structural lessons in that table. First, a pair-level jury plateaus at ~a third of
 conflicts regardless of juror strength — the bottleneck is candidate formation, which is
@@ -411,7 +423,9 @@ make it a different kind of lane:
 positives** in ~20 s — the opus-screen + opus-jury cascade's lenient recall (27/30) with 0
 instead of 2 false positives and seven more strict hits than its 20/30, at a fraction of
 the cost, and with **zero false positives at every threshold tried** (0.5–0.95) across every
-question-style ablation. The three misses are structurally outside a pair question: two
+question-style ablation. (Re-measured through the Anthropic API on 2026-09-17, the opus
+screen + opus jury cascade lands at 19/30 strict, 27/30 lenient, 3/19 advisory false
+positives in ~10 min.) The three misses are structurally outside a pair question: two
 skill-routing-ambiguity cases (DTS01 lives in trigger descriptions) and a drifted
 near-duplicate (DTR02).
 

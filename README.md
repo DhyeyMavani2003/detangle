@@ -146,7 +146,10 @@ detangle scan --typesafe --jury     # TypeSafe decides what it can; the jury get
 In GitHub Actions, store the same key as a repository secret named `TYPESAFE_API_KEY`
 (**Settings → Secrets and variables → Actions → New repository secret**): the nightly deep
 scan and the manual `hybrid-eval` workflow read it, and `--deep` switches the lane on
-whenever the variable is present.
+whenever the variable is present. An `ANTHROPIC_API_KEY` secret gives the screen and jury
+lanes an API backend on the runner the same way (use a **workspace-scoped** key, or add the
+workspace id as `ANTHROPIC_WORKSPACE_ID` for an organization-level one); with both secrets
+the nightly runs the full cascade.
 
 (`pip install git+https://github.com/DhyeyMavani2003/detangle` also works once this code
 is on the default branch.)
@@ -245,10 +248,12 @@ python -m benchmarks.run_eval
   colloquial wording written *without* consulting detangle's lexicons (including 4
   procedural/skill-ordering cases), plus 19 benign-but-tricky control trees. Strict = an
   expected-code finding touches every involved file; lenient = right pair, adjacent
-  conflict class. LLM rows measured 2026-08-31 live via `claude -p`; the TypeSafe row measured
-  2026-09-17 against the TypeSafe API (`python -m benchmarks.run_eval --holdout --lanes typesafe`
-  with `TYPESAFE_API_KEY` set, or the `hybrid-eval` workflow with `lanes: typesafe`, which
-  reproduced it on a GitHub runner in 8 s):
+  conflict class. The first LLM rows were measured 2026-08-31 live via `claude -p`; the TypeSafe
+  row 2026-09-17 against the TypeSafe API (`python -m benchmarks.run_eval --holdout --lanes
+  typesafe` with `TYPESAFE_API_KEY` set, or the `hybrid-eval` workflow with `lanes: typesafe`,
+  which reproduced it on a GitHub runner in 8 s); the "Anthropic API" rows 2026-09-17 on GitHub
+  runners by the same workflow with `ANTHROPIC_API_KEY` set (`anthropic` backend,
+  `claude-opus-5` screen, `claude-haiku-4-5-20251001` or `claude-opus-5` jury):
 
   | configuration | strict recall | class-lenient | holdout FPs |
   |---|---|---|---|
@@ -259,6 +264,10 @@ python -m benchmarks.run_eval
   | NLI + screen (`opus`) + jury (`sonnet`) | 17/30 (57%) | **27/30 (90%)** | 4/19* |
   | NLI + screen (`opus`) + jury (`opus`) | 20/30 (67%) | **27/30 (90%)** | 2/19* |
   | TypeSafe lane (typed pair judgments, ~20 s total) | **27/30 (90%)** | 27/30 (90%) | **0/19 (0%)** |
+  | screen (`opus`) + jury (`haiku`), Anthropic API, ~5 min | 16/30 (53%) | **27/30 (90%)** | 4/19* |
+  | screen (`opus`) + jury (`opus`), Anthropic API, ~10 min | 19/30 (63%) | **27/30 (90%)** | 3/19* |
+  | TypeSafe + jury (`haiku`), Anthropic API, ~20 s | **27/30 (90%)** | 27/30 (90%) | 1/19* |
+  | TypeSafe + screen (`opus`) + jury (`haiku`), Anthropic API, ~3 min | **27/30 (90%)** | 27/30 (90%) | 3/19* |
 
   \* every measured false positive, in every configuration, is a jury
   CONDITIONAL_CONFLICT — the model's "maybe" bucket — so those findings land at
@@ -273,9 +282,16 @@ because the bottleneck is candidate formation, not adjudication; the **screen la
 attacks exactly that — a strong model nominating pairs from the whole config — which is
 what breaks the ceiling (the screen configurations were the first to catch the procedural
 skill-ordering conflicts — 4/4 strict with the `opus` jury — and the TypeSafe lane now catches
-the same 4/4 from pair questions alone). Adversarially-verified false-positive shapes
-from real repos (target-vs-trigger numeric bands, do-X-instead refinements, purpose
-clauses) are encoded as permanent precision gates and regression tests.
+the same 4/4 from pair questions alone). Re-measured through the Anthropic API on GitHub
+runners, the screen cascades land within a few cases of the August CLI numbers (16–19/30
+strict, 27/30 lenient, 3–4/19 advisory false positives, still 4/4 on the procedural cases),
+and stacking them on the TypeSafe lane adds **no** holdout recall — only advisory
+conditional-conflict findings on the benign trees (1/19 when the `haiku` jury adjudicates
+TypeSafe's uncertain band, 3/19 with the `opus` screen in front). The TypeSafe lane is the
+recommended thorough pass; the screen + jury cascade is a second opinion whose extra
+findings arrive at advisory severity and need a human answer. Adversarially-verified
+false-positive shapes from real repos (target-vs-trigger numeric bands, do-X-instead
+refinements, purpose clauses) are encoded as permanent precision gates and regression tests.
 
 ## Nightly triage: thorough scans, human answers, zero re-asking
 
@@ -288,7 +304,12 @@ every human verdict ever given:
   available lane (the TypeSafe lane when the `TYPESAFE_API_KEY` secret is set, the screen
   and jury when an LLM backend is), ten per-class screen sweeps instead of one, jury cap
   lifted to 1000. Hours are fine; nobody is waiting — though with TypeSafe alone the demo
-  agent's 2,665 candidate pairs are judged in three to five minutes on a cold cache.
+  agent's 2,665 candidate pairs are judged in three to five minutes on a cold cache, and the
+  full cascade (TypeSafe + ten `opus` screen sweeps + a `haiku` jury over 83 pairs) took
+  eleven minutes on a GitHub runner. Expect the jury to add **advisory-tier** questions:
+  the first full-cascade night on the demo agent surfaced 30 new jury findings (15
+  conditional conflicts, 11 order-unstable NEEDS_HUMAN, 2 fragile exceptions, 2
+  redundancies), none CI-failing.
 - **In the morning**, `detangle baseline list <scan-root> --status new` (for this repo:
   `detangle baseline list examples/demo-agent --status new`) is a short list of questions.
   Answer each with `detangle baseline set <fingerprint> accepted|open|resolved <scan-root>
@@ -304,8 +325,10 @@ every human verdict ever given:
 
 `examples/demo-agent` is the realistic showcase config, and
 `.github/workflows/nightly-deep-scan.yml` runs the thorough pass against it nightly: the
-job goes red when there is something new, the only-new report lands in the step summary,
-and the refreshed baseline is uploaded as the `deep-scan-report` artifact. It is committed
+job goes red when there is something new at or above the configured `fail_on` severity
+(`error` for the demo agent, so new advisory jury findings show up in the report and the
+morning `baseline list` without turning the job red), the only-new report lands in the
+step summary, and the refreshed baseline is uploaded as the `deep-scan-report` artifact. It is committed
 back only when the workflow is dispatched by hand with `commit_baseline: true` (or you
 download the artifact and commit it) — then the morning `baseline list` shows the new
 entries on a checkout. File format, statuses, and CI recipes:

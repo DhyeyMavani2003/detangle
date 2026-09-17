@@ -274,8 +274,15 @@ jobs:
 Notes on the shape:
 
 - `--fail-on-new` makes the job red exactly when there is something for a human to look
-  at — new findings or regressions — and green when the night found nothing new, even if
-  dozens of `open` findings are still pending. The job's color *is* the triage signal.
+  at — new findings or regressions **at or above `fail_on`** — and green when the night
+  found nothing new at that severity, even if dozens of `open` findings are still pending.
+  The job's color *is* the triage signal for the CI-failing tiers; the advisory tier (jury
+  conditional conflicts, fragile exceptions, redundancies — the bulk of what a full
+  LLM cascade adds) still lands in the report and in `baseline list --status new`, so read
+  that list on green mornings too. The first full-cascade night on the demo agent (TypeSafe
+  + `opus` screen + `haiku` jury through the Anthropic API) added 30 new advisory/info
+  entries and left 72 August CLI-jury entries "no longer occurring" — verdict noise across
+  backends; `baseline prune` retires them once you are satisfied they are gone.
 - `--only-new` keeps the Markdown summary down to the actual questions.
 - If your default branch is protected, replace the commit step with a PR-opening action
   (e.g. `peter-evans/create-pull-request`) so the refreshed baseline arrives as a
