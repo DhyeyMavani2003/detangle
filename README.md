@@ -105,7 +105,8 @@ variables** only; the config file at most names *which* variable to read.
 ```bash
 # Anthropic API key — nothing to configure; `auto` detects the key
 pip install 'detangle[jury]'
-export ANTHROPIC_API_KEY=sk-ant-...
+export ANTHROPIC_API_KEY=sk-ant-...        # a workspace-scoped key needs nothing else;
+# export ANTHROPIC_WORKSPACE_ID=wrkspc_...  # an organization-level key must name a workspace
 detangle scan --screen
 ```
 

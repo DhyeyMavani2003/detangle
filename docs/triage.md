@@ -237,8 +237,11 @@ jobs:
       - name: Deep scan against the baseline
         env:
           # repository secrets (Settings → Secrets and variables → Actions);
-          # each lane skips gracefully when its key is absent
+          # each lane skips gracefully when its key is absent, and the report's
+          # Notes section says which lane skipped and why. ANTHROPIC_WORKSPACE_ID
+          # is needed only with an organization-level Anthropic key.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         run: |
           status=0

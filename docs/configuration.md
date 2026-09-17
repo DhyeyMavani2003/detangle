@@ -359,6 +359,7 @@ Lists every rule code with its name, default severity, and one-line summary.
 | Variable | Used by | Meaning |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | jury `anthropic` backend | API key for the Anthropic SDK. With the `claude-cli` backend no key is needed (the CLI carries its own auth); with the `openai` backend the key env var is named by `api_key_env`. If no backend is available while `--jury` is requested, the lane is skipped with a warning; the scan still completes. |
+| `ANTHROPIC_WORKSPACE_ID` | jury `anthropic` backend | Only for an **organization-level** key (one not created inside a workspace): the API rejects such a key's requests unless they name a workspace, so set this to the workspace id from the console and the backend sends it as the `anthropic-workspace-id` header. A workspace-scoped key needs nothing; leave it unset. |
 | `TYPESAFE_API_KEY` | `typesafe` lane | API key for TypeSafe's System One endpoint; the variable's name is configurable via `[detangle.typesafe] api_key_env`. Absent while `--typesafe` (or `--deep`) is requested, the lane is skipped with a note; the scan still completes. |
 
 The deterministic core reads no environment variables and makes no network calls.

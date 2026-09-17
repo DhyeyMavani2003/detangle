@@ -3,9 +3,13 @@ name: Hybrid eval (LLM lanes)
 # Manual holdout evaluation with the LLM and TypeSafe lanes enabled. The
 # default CI never spends tokens; this workflow is dispatched on demand and
 # needs the ANTHROPIC_API_KEY repository secret for the LLM lanes (the
-# `anthropic` backend) and TYPESAFE_API_KEY for the TypeSafe lane. Without a
-# secret, that lane skips gracefully and the run reports the remaining lanes'
-# numbers. `lanes: typesafe` reproduces the README's 27/30, 0/19 row in ~20 s.
+# `anthropic` backend) and TYPESAFE_API_KEY for the TypeSafe lane. An
+# organization-level Anthropic key (one not created inside a workspace) also
+# needs ANTHROPIC_WORKSPACE_ID, the console's workspace id, or every call is
+# rejected; a workspace-scoped key needs nothing more. Without a secret, that
+# lane skips gracefully and the run reports the remaining lanes' numbers, and
+# the holdout table's "lane notes" block says which lane skipped and why.
+# `lanes: typesafe` reproduces the README's 27/30, 0/19 row in ~20 s.
 
 on:
   workflow_dispatch:
@@ -48,6 +52,7 @@ jobs:
       - name: Run holdout
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         run: |
           python -m benchmarks.run_eval --holdout \

@@ -126,7 +126,8 @@ def _fake_anthropic(monkeypatch, *, with_temperature: bool, calls: list[dict]):
                 return _Resp('{"verdict": "DISTINCT"}')
 
     class _Client:
-        def __init__(self):
+        def __init__(self, default_headers=None):
+            self.default_headers = default_headers
             self.messages = _Messages()
 
     mod = types.ModuleType("anthropic")
@@ -162,6 +163,19 @@ class TestAnthropicBackend:
         assert b.complete("SYS", "USR") == '{"verdict": "DISTINCT"}'
         (call,) = calls
         assert "temperature" not in call
+
+    def test_workspace_id_header_only_when_configured(self, monkeypatch):
+        """An organization-level key must name a workspace per request; the
+        header rides the client, and a workspace-scoped key sends none."""
+        _fake_anthropic(monkeypatch, with_temperature=False, calls=[])
+        monkeypatch.delenv("ANTHROPIC_WORKSPACE_ID", raising=False)
+        assert AnthropicBackend("m1").client.default_headers is None
+        monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "  ")
+        assert AnthropicBackend("m1").client.default_headers is None
+        monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_01abc")
+        assert AnthropicBackend("m1").client.default_headers == {
+            "anthropic-workspace-id": "wrkspc_01abc"
+        }
 
     def test_sdk_errors_degrade_to_jury_error(self, monkeypatch):
         _fake_anthropic(monkeypatch, with_temperature=False, calls=[])

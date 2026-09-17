@@ -149,7 +149,7 @@ The juror is backend-agnostic — `[detangle.jury] backend` selects the transpor
 | backend | needs | default model | notes |
 |---|---|---|---|
 | `claude-cli` | the `claude` executable on PATH | `haiku` | **Zero-config**: `claude -p` print mode rides your existing Claude Code subscription. Runs in an empty scratch dir so the juror never ingests the scanned repo's own CLAUDE.md. Validated end-to-end in this repo. |
-| `anthropic` | `detangle[jury]` + `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` | The Anthropic API; pin snapshots. |
+| `anthropic` | `detangle[jury]` + `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` | The Anthropic API; pin snapshots. An organization-level key (not created inside a workspace) also needs `ANTHROPIC_WORKSPACE_ID`; a workspace-scoped key does not. |
 | `openai` | `[detangle.jury] base_url` (+ optional key via `api_key_env`) | `gpt-5-mini` | Any OpenAI-compatible `/chat/completions` endpoint — OpenAI, DeepSeek, Gemini's compat layer, **Ollama/vLLM for fully-local juries** (`base_url = "http://localhost:11434/v1"`, no key). Stdlib urllib; zero extra dependencies. |
 
 `auto` picks the first available: `ANTHROPIC_API_KEY` → anthropic, else `claude` on
@@ -298,9 +298,11 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 # local, subscription backend: nothing to set — just have Claude Code installed
 
-# GitHub Actions (API backend)
+# GitHub Actions (API backend); ANTHROPIC_WORKSPACE_ID only for an
+# organization-level key — a workspace-scoped key needs the key alone
 env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
 ```
 
 ---

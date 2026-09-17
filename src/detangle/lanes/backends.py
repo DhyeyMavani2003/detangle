@@ -84,7 +84,17 @@ class AnthropicBackend(Backend):
             ) from e
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise JuryError("anthropic backend requires ANTHROPIC_API_KEY in the environment")
-        self.client = anthropic.Anthropic()
+        # An organization-level key (one not created inside a workspace) is
+        # rejected by the API unless the request names a workspace; the
+        # console's workspace id goes in ANTHROPIC_WORKSPACE_ID. A
+        # workspace-scoped key needs nothing.
+        headers = {}
+        workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+        if workspace:
+            headers["anthropic-workspace-id"] = workspace
+        self.client = (
+            anthropic.Anthropic(default_headers=headers) if headers else anthropic.Anthropic()
+        )
         self.model = model
         self.max_tokens = max_tokens
         # The 0.x SDK takes ``temperature``; the 1.x SDK (Claude 5 API
@@ -102,9 +112,10 @@ class AnthropicBackend(Backend):
                 **self._sampling,
             )
         except Exception as e:
-            # an SDK error (unknown model id, auth, network) must degrade the
-            # lane like any backend failure, not abort the scan with a traceback
-            raise JuryError(f"anthropic backend: {type(e).__name__}: {str(e)[:200]}") from e
+            # an SDK error (unknown model id, auth, network, an unscoped key)
+            # must degrade the lane like any backend failure, not abort the
+            # scan with a traceback; keep enough of the API's message to act on
+            raise JuryError(f"anthropic backend: {type(e).__name__}: {str(e)[:400]}") from e
         return "".join(getattr(b, "text", "") for b in resp.content)
 
 

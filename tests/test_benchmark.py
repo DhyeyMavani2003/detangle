@@ -283,6 +283,56 @@ def test_holdout_eval_runs_and_reports_shape() -> None:
     table = render_holdout_table(report)
     assert "holdout (novel phrasings)" in table
     assert "recall" in table
+    # deterministic-only: no optional lane requested -> no lane-notes block
+    assert report["lanes"] == [] and isinstance(report["lane_notes"], dict)
+    assert "lane notes" not in table
+
+
+def test_holdout_table_surfaces_lane_notes_when_lanes_requested() -> None:
+    """A requested lane that skipped or whose backend failed must be visible
+    in the table: on the CI runner every screen/jury call once failed on an
+    SDK change and the run silently reported the deterministic-only score."""
+    from benchmarks.run_eval import _lane_notes
+
+    err = (
+        "screen lane: backend failure (anthropic backend: TypeError: "
+        + "x" * 300
+        + "); sweep incomplete"
+    )
+    report = {
+        "suite": "holdout (novel phrasings)",
+        "scoring": "s",
+        "conflicts": [],
+        "benign": [],
+        "per_code": {},
+        "lanes": ["screen", "jury"],
+        "lane_notes": {
+            err: 49,
+            "Zed reads only AGENTS.md (first match in its search order); ignored by Zed: CLAUDE.md": 12,
+            "jury lane: adjudicated 0 pair(s) with anthropic:claude-haiku-4-5-20251001": 49,
+        },
+        "totals": {
+            "conflict_cases": 0,
+            "detected": 0,
+            "recall": 0.0,
+            "benign_cases": 0,
+            "false_positives": 0,
+            "fp_rate": 0.0,
+            "wall_clock_s": 1.0,
+        },
+    }
+    table = render_holdout_table(report)
+    assert "lane notes (screen, jury" in table
+    assert "[ 49 tree(s)] screen lane: backend failure (anthropic backend: TypeError:" in table
+    assert "jury lane: adjudicated 0 pair(s)" in table
+    # the per-tree ecosystem remark is not a lane note
+    assert "Zed reads only" not in table
+    # long backend errors keep their head (where the API's message is) and are marked cut
+    kept = [n for n, _ in _lane_notes(report["lane_notes"]) if n.startswith("screen lane")][0]
+    assert kept.endswith("…") and len(kept) <= 220
+    # and a clean run says so rather than printing nothing
+    report["lane_notes"] = {}
+    assert "every requested lane ran without a note" in render_holdout_table(report)
 
 
 def test_holdout_detected_requires_touching_every_involved_file(tmp_path: Path) -> None:

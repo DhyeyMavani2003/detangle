@@ -382,6 +382,14 @@ def evaluate_holdout(
     """
     t0 = time.perf_counter()
     wanted = set(case_ids) if case_ids else None
+    # every lane note across every scanned tree, with how many trees raised it:
+    # a lane that skipped or whose backend failed must be visible in the
+    # report, or a dead lane reads as the deterministic-only score
+    lane_notes: dict[str, int] = {}
+
+    def _collect(result: ScanResult) -> None:
+        for note in result.corpus.notes:
+            lane_notes[note] = lane_notes.get(note, 0) + 1
 
     conflict_results: list[dict] = []
     per_code: dict[str, dict[str, int]] = {}
@@ -395,6 +403,7 @@ def evaluate_holdout(
             screen_model=screen_model,
             cache_dir=cache_dir,
         )
+        _collect(result)
         hit = holdout_detected(result, case)
         lenient_hit = holdout_detected_lenient(result, case)
         primary = list(case["expected_codes"])[0]
@@ -424,6 +433,7 @@ def evaluate_holdout(
             screen_model=screen_model,
             cache_dir=cache_dir,
         )
+        _collect(result)
         fp_codes = sorted({f.code for f in result.findings if f.code in HOLDOUT_FP_CODES})
         benign_results.append(
             {
@@ -450,6 +460,8 @@ def evaluate_holdout(
         "conflicts": conflict_results,
         "benign": benign_results,
         "per_code": {c: per_code[c] for c in sorted(per_code)},
+        "lanes": list(lanes),
+        "lane_notes": {n: lane_notes[n] for n in sorted(lane_notes, key=lambda k: -lane_notes[k])},
         "totals": {
             "conflict_cases": n_conflicts,
             "detected": n_detected,
@@ -520,6 +532,23 @@ def render_table(report: dict) -> str:
     return "\n".join(lines)
 
 
+_ECOSYSTEM_NOTE_MARKERS = ("reads only", "first match", "ignored by")
+
+
+def _lane_notes(notes: dict[str, int], width: int = 220) -> list[tuple[str, int]]:
+    """Lane notes worth a line in the holdout table: everything the optional
+    lanes said (skipped, backend failure, calls made), minus the deterministic
+    ecosystem-precedence remarks every tree raises. Long backend errors keep
+    their head, where the API's message is."""
+    out: list[tuple[str, int]] = []
+    for note, n in notes.items():
+        if any(m in note for m in _ECOSYSTEM_NOTE_MARKERS):
+            continue
+        text = note if len(note) <= width else note[: width - 1] + "…"
+        out.append((text, n))
+    return out
+
+
 def render_holdout_table(report: dict) -> str:
     lines: list[str] = []
     t = report["totals"]
@@ -545,6 +574,15 @@ def render_holdout_table(report: dict) -> str:
         lines.append("benign trees with conflict-class false positives:")
         for b in fps:
             lines.append(f"  {b['id']:<34} fired: {', '.join(b['conflict_codes_seen'])}")
+        lines.append("")
+    if report.get("lanes"):
+        lanes = ", ".join(report["lanes"])
+        notes = _lane_notes(report.get("lane_notes", {}))
+        lines.append(f"lane notes ({lanes}; a lane that skipped or failed shows here):")
+        for note, n in notes:
+            lines.append(f"  [{n:>3} tree(s)] {note}")
+        if not notes:
+            lines.append("  (none — every requested lane ran without a note)")
         lines.append("")
     lines.append(
         f"holdout recall: {t['detected']}/{t['conflict_cases']} ({t['recall']:.1%}) strict, "
