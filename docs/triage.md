@@ -2,8 +2,9 @@
 
 The benchmark in [lanes.md](lanes.md) is blunt about the trade: the deterministic core is
 free, instant, and catches 17% of the novel-phrasing holdout; the full screen + jury
-cascade catches 90% class-lenient and takes strong-model calls to do it. That creates two
-problems any linter must solve before a team runs it twice:
+cascade catches 90% class-lenient and takes strong-model calls to do it (the TypeSafe lane
+reaches 90% strict in seconds to minutes, but still needs a key and a network). That creates
+two problems any linter must solve before a team runs it twice:
 
 1. **A thorough scan does not fit in a PR check.** Whole-config screening with a frontier
    model takes minutes to hours, not seconds.
@@ -116,10 +117,12 @@ the baseline as the answer sheet:
    Findings the baseline has never seen are recorded with `status: "new"`; findings that
    disappeared get `missing_since` stamped; everything already answered stays answered.
 
-2. **In the morning**, list the questions:
+2. **In the morning**, list the questions (pass the scan root when it is not the current
+   directory — every `baseline` subcommand takes it as its last positional argument):
 
    ```bash
-   detangle baseline list --status new
+   detangle baseline list --status new                        # baseline of the cwd
+   detangle baseline list examples/demo-agent --status new    # this repo's demo agent
    ```
 
 3. **Answer each one** — by fingerprint or any unique prefix:
@@ -190,9 +193,9 @@ update = true
 | `--update-baseline` | Write the post-scan state back to the baseline file. |
 | `--only-new` | Report only `new` findings and regressions. |
 | `--fail-on-new` | Exit non-zero only for `new`/regression findings at or above `fail_on`. |
-| `detangle baseline list [--status S]` | List entries; `--status new` is the triage queue. |
-| `detangle baseline set FP STATUS [--note ...]` | Answer a question by fingerprint (or prefix). |
-| `detangle baseline prune` | Delete entries whose finding has disappeared. |
+| `detangle baseline list [ROOT] [--status S]` | List entries; `--status new` is the triage queue. |
+| `detangle baseline set FP STATUS [ROOT] [--note ...]` | Answer a question by fingerprint (or prefix); STATUS is `new`, `open`, `accepted` or `resolved`. |
+| `detangle baseline prune [ROOT]` | Delete entries whose finding has disappeared. |
 
 `--baseline`, `--update-baseline`, `--only-new`, `--fail-on-new`, and `--deep` work on
 `detangle diff` as well as `scan`; the `baseline` subcommands take the scan root as an
@@ -205,8 +208,12 @@ optional path argument and `--baseline FILE` to override the file location.
 ### The nightly deep scan
 
 This repo runs the loop against `examples/demo-agent` — the realistic showcase config —
-in [`.github/workflows/nightly-deep-scan.yml`](../.github/workflows/nightly-deep-scan.yml).
-The generic shape for any repo:
+in [`.github/workflows/nightly-deep-scan.yml`](../.github/workflows/nightly-deep-scan.yml):
+the scheduled run refreshes the baseline on the runner, uploads it with the report as the
+`deep-scan-report` artifact, and goes red on new findings; a manual dispatch with
+`commit_baseline: true` commits the refreshed baseline back, which is what makes the
+morning `baseline list` work on a checkout. The generic shape for any repo, with the
+commit step inline:
 
 ```yaml
 name: nightly-deep-scan
@@ -224,7 +231,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install detangle
+      # not on PyPI yet: install from GitHub (`pip install 'detangle[jury]'` once published)
+      - run: pip install 'detangle[jury] @ git+https://github.com/DhyeyMavani2003/detangle'
 
       - name: Deep scan against the baseline
         env:
@@ -278,7 +286,7 @@ PRs need seconds, not hours — so the gate is deterministic-only:
 
 ```yaml
 - uses: actions/checkout@v4
-- run: pip install detangle
+- run: pip install git+https://github.com/DhyeyMavani2003/detangle   # `pip install detangle` once published
 - run: detangle scan --baseline --fail-on-new     # deterministic lane only; seconds
 ```
 

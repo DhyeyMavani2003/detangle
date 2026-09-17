@@ -23,8 +23,10 @@ severity in `.detangle.toml` (see [configuration.md](configuration.md)).
 **Detection lanes.** Each rule below is marked with how it is detected *today*:
 
 - **deterministic** — always on: pure-Python pattern/frame/scope analysis, no network, no ML.
-- **NLI lane** (optional) / **jury lane** (optional) — can additionally surface or confirm the
-  code; see [lanes.md](lanes.md).
+- **jury lane** (optional; fed by the **screen**'s nominations under `--screen`) and
+  **TypeSafe lane** (optional) — can additionally surface the code with their own verdicts;
+  the **NLI lane** only pre-filters pairs for the jury and never emits a finding. See
+  [lanes.md](lanes.md).
 - **reserved** — the code exists in the taxonomy but no shipped detector emits it yet.
 
 **Suppressing a finding.** Put an HTML comment directly above the instruction (it covers evidence
@@ -63,11 +65,13 @@ Two co-active instructions prescribe incompatible behavior for the same scope: `
 contradict each other, Claude may pick one arbitrarily."* Which one wins is model- and
 position-dependent, so behavior silently changes across sessions and model versions.
 
-- **Default severity:** `error` (downgraded to `warning` when the pair only co-loads
-  conditionally).
-- **Detection:** deterministic (modality/antonym frame clash). The NLI lane can surface
-  additional high-scoring pairs as `warning`-level *leads*, and the jury lane maps its
-  `CONTRADICTORY` verdicts here.
+- **Default severity:** `error` (downgraded to `warning` when both sides are conditionally
+  loaded with merely overlapping triggers, or the pair is only co-active across tools —
+  exposure below 0.7; a launch-set file vs a conditionally loaded one stays `error`).
+- **Detection:** deterministic (modality/antonym frame clash). The jury lane maps its
+  `CONTRADICTORY` verdicts here and the TypeSafe lane its `contradictory` class (unless the
+  structural overlay routes the pair to DTP04/DTP02); the NLI lane never emits findings on
+  its own.
 - **Fix:** merge the two into one instruction, or scope each with an explicit condition; across
   files, delete one or declare the intended winner.
 - **Suppress:** `<!-- detangle-ignore DTC01: reason -->` above either instruction.

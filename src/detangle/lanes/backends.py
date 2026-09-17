@@ -67,13 +67,18 @@ class AnthropicBackend(Backend):
         self.model = model
 
     def complete(self, system: str, user: str) -> str:
-        resp = self.client.messages.create(
-            model=self.model,
-            max_tokens=500,
-            temperature=0,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
+        try:
+            resp = self.client.messages.create(
+                model=self.model,
+                max_tokens=500,
+                temperature=0,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+        except Exception as e:
+            # an SDK error (unknown model id, auth, network) must degrade the
+            # lane like any backend failure, not abort the scan with a traceback
+            raise JuryError(f"anthropic backend: {type(e).__name__}: {str(e)[:200]}") from e
         return "".join(getattr(b, "text", "") for b in resp.content)
 
 

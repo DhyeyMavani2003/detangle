@@ -137,7 +137,8 @@ model = "qwen3:8b"
 ```bash
 # TypeSafe (typed, calibrated pair judgments — a separate lane, not a jury backend):
 export TYPESAFE_API_KEY=...
-detangle scan --typesafe            # ~20 s per config; 27/30 holdout recall at 0 false positives
+detangle scan --typesafe            # 27/30 holdout recall at 0 false positives (49 small trees in ~20 s;
+                                    # a ~130-unit config takes 3–5 min on a cold cache, re-scans are free)
 detangle scan --typesafe --jury     # TypeSafe decides what it can; the jury gets the rest
 ```
 
@@ -161,12 +162,16 @@ pip install 'detangle[jury]'    # + the anthropic SDK (API jury backend only)
 
 ```bash
 detangle scan                    # scan the current repo, pretty output
-detangle scan --nli --screen     # full cascade: deterministic + NLI + screen + jury
+detangle scan --typesafe         # + calibrated typed pair judgments (TYPESAFE_API_KEY)
+detangle scan --typesafe --jury  # TypeSafe decides what it can; the jury gets its uncertain band
+detangle scan --nli --screen     # LLM cascade: deterministic + NLI + screen + jury
 detangle scan --deep --baseline --update-baseline --only-new
-                                 # overnight: every lane, refresh the triage baseline,
-                                 # report only what's genuinely new
+                                 # overnight: every available lane, refresh the triage
+                                 # baseline, report only what's genuinely new
 detangle scan --baseline --fail-on-new           # CI gate: only NEW conflicts fail
-detangle baseline list --status new              # the morning triage queue
+detangle baseline list --status new              # the morning triage queue (add the scan
+                                                 # root when it is not the cwd, e.g.
+                                                 # `detangle baseline list examples/demo-agent --status new`)
 detangle scan --format sarif -o detangle.sarif   # GitHub code-scanning
 detangle diff --base origin/main # only findings introduced by your changes
 detangle explain DTP02           # what a rule means and how to fix it
@@ -186,6 +191,9 @@ so `detangle scan` drops straight into CI.
   with:
     sarif_file: detangle.sarif
 ```
+
+(Uploading to code scanning needs `permissions: security-events: write` on the job; this
+repo's own CI uploads the SARIF as an artifact instead.)
 
 ### Configuration
 
@@ -236,7 +244,10 @@ python -m benchmarks.run_eval
   colloquial wording written *without* consulting detangle's lexicons (including 4
   procedural/skill-ordering cases), plus 19 benign-but-tricky control trees. Strict = an
   expected-code finding touches every involved file; lenient = right pair, adjacent
-  conflict class. Measured 2026-08-31, all LLM rows live via `claude -p`:
+  conflict class. LLM rows measured 2026-08-31 live via `claude -p`; the TypeSafe row measured
+  2026-09-17 against the TypeSafe API (`python -m benchmarks.run_eval --holdout --lanes typesafe`
+  with `TYPESAFE_API_KEY` set, or the `hybrid-eval` workflow with `lanes: typesafe`, which
+  reproduced it on a GitHub runner in 8 s):
 
   | configuration | strict recall | class-lenient | holdout FPs |
   |---|---|---|---|
@@ -259,8 +270,9 @@ contradictions, structural/precedence/budget issues) at zero false-positive cost
 pair-level jury alone plateaus at ~a third of conflicts *regardless of juror strength*,
 because the bottleneck is candidate formation, not adjudication; the **screen lane**
 attacks exactly that — a strong model nominating pairs from the whole config — which is
-what breaks the ceiling (and the only configurations that catch the procedural
-skill-ordering conflicts — 4/4 strict with the `opus` jury). Adversarially-verified false-positive shapes
+what breaks the ceiling (the screen configurations were the first to catch the procedural
+skill-ordering conflicts — 4/4 strict with the `opus` jury — and the TypeSafe lane now catches
+the same 4/4 from pair questions alone). Adversarially-verified false-positive shapes
 from real repos (target-vs-trigger numeric bands, do-X-instead refinements, purpose
 clauses) are encoded as permanent precision gates and regression tests.
 
@@ -275,10 +287,11 @@ every human verdict ever given:
   available lane (the TypeSafe lane when the `TYPESAFE_API_KEY` secret is set, the screen
   and jury when an LLM backend is), ten per-class screen sweeps instead of one, jury cap
   lifted to 1000. Hours are fine; nobody is waiting — though with TypeSafe alone the demo
-  agent's 2,665 candidate pairs are judged in about three minutes.
-- **In the morning**, `detangle baseline list --status new` is a short list of questions.
-  Answer each with `detangle baseline set <fingerprint> accepted|open|resolved --note "..."`
-  — or edit the JSON by hand; it is built to be hand-edited and reviewed in PRs.
+  agent's 2,665 candidate pairs are judged in three to five minutes on a cold cache.
+- **In the morning**, `detangle baseline list <scan-root> --status new` (for this repo:
+  `detangle baseline list examples/demo-agent --status new`) is a short list of questions.
+  Answer each with `detangle baseline set <fingerprint> accepted|open|resolved <scan-root>
+  --note "..."` — or edit the JSON by hand; it is built to be hand-edited and reviewed in PRs.
 - **Answers are remembered forever.** Findings are identified by content-addressed
   fingerprints that survive line moves, plus a code-independent pair key so a verdict
   survives an LLM lane re-classifying the same pair. `accepted` suppresses a finding
@@ -289,8 +302,13 @@ every human verdict ever given:
   known-but-open backlog.
 
 `examples/demo-agent` is the realistic showcase config, and
-`.github/workflows/nightly-deep-scan.yml` runs the full loop against it nightly. File
-format, statuses, and CI recipes: [docs/triage.md](docs/triage.md).
+`.github/workflows/nightly-deep-scan.yml` runs the thorough pass against it nightly: the
+job goes red when there is something new, the only-new report lands in the step summary,
+and the refreshed baseline is uploaded as the `deep-scan-report` artifact. It is committed
+back only when the workflow is dispatched by hand with `commit_baseline: true` (or you
+download the artifact and commit it) — then the morning `baseline list` shows the new
+entries on a checkout. File format, statuses, and CI recipes:
+[docs/triage.md](docs/triage.md).
 
 ## Roadmap
 

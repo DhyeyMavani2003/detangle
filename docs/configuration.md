@@ -43,6 +43,7 @@ deep = false         # true = every scan is thoroughness-first (see triage.md); 
 nli = false
 jury = false
 screen = false       # whole-config LLM nomination sweep; implies jury
+typesafe = false     # calibrated typed pair judgments (needs TYPESAFE_API_KEY)
 
 [detangle.rules]
 DTR04 = false        # disable a rule entirely
@@ -62,7 +63,9 @@ model = "opus"          # screen-lane model; use the strongest you have
 [detangle.typesafe]
 model = "jev-latest"    # TypeSafe System One model
 api_key_env = "TYPESAFE_API_KEY"
+endpoint = "https://api.typesafe.ai/v1/systemone"
 pairs = "all"           # all co-activatable pairs | candidates (deterministic blocking)
+max_pairs = 20000       # safety cap; a capped run counts as incomplete for the baseline
 tau = 0.7               # emit at/above this conflict probability
 strong = 0.9            # warning severity at/above (else advisory)
 uncertain_low = 0.3     # [uncertain_low, tau) is handed to the jury when enabled
@@ -336,7 +339,7 @@ baseline location. Statuses and workflow: [triage.md](triage.md).
 | Subcommand | Meaning |
 |---|---|
 | `list [--status S]` | List baseline entries, optionally filtered by status (`new`/`open`/`accepted`/`resolved`). `--status new` is the morning triage queue. |
-| `set FP STATUS [--note ...]` | Set an entry's status by fingerprint or any unique prefix, optionally recording a justification note. |
+| `set FP STATUS [ROOT] [--note ...]` | Set an entry's status (`new`/`open`/`accepted`/`resolved`) by fingerprint or any unique prefix, optionally recording a justification note. Every `baseline` subcommand takes the scan root as its last positional argument (default: the current directory). |
 | `prune` | Delete entries whose finding has disappeared (`missing_since` set); everything else is kept. |
 
 ### `detangle explain CODE`

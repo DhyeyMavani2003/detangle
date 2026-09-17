@@ -177,6 +177,15 @@ class TestBaselineCli:
         assert report["baseline"]["new"] >= 1
         assert all(f["baseline"] == "new" for f in report["findings"])
 
+    def test_list_without_a_baseline_file_says_so(self, tmp_path: Path, capsys):
+        """An empty answer must not read as "nothing to triage" when the file
+        simply is not there (e.g. the wrong scan root)."""
+        write_tree(tmp_path, {"CLAUDE.md": "# T\n\nNever push to main.\n"})
+        assert main(["baseline", "list", str(tmp_path), "--status", "new"]) == 0
+        captured = capsys.readouterr()
+        assert "no baseline entries" in captured.out
+        assert "no baseline file" in captured.err and "--update-baseline" in captured.err
+
     def test_list_set_prune_cycle(self, tmp_path: Path, capsys):
         bpath = self._seed(tmp_path)
         assert main(["baseline", "list", str(tmp_path), "--status", "new"]) == 0

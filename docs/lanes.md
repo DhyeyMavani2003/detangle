@@ -3,8 +3,10 @@
 detangle runs up to five analysis lanes. The design follows the contradiction-detection
 literature's cascade result: deterministic rules for what rules do best (negation, antonymy,
 numbers, scopes), an NLI cross-encoder as a *recall filter*, a strong-model **screen** as a
-whole-config *nominator*, and an LLM jury as the only tier allowed to issue semantic
-verdicts. Each lane is honest about what it can and cannot do.
+whole-config *nominator*, an LLM jury that issues schema-constrained semantic verdicts on
+candidate pairs, and a TypeSafe lane that issues calibrated typed verdicts with
+probabilities (the jury and TypeSafe are the verdict-givers; NLI and the screen never are).
+Each lane is honest about what it can and cannot do.
 
 | Lane | Enabled | Cost | Network | Role |
 |---|---|---|---|---|
@@ -12,7 +14,7 @@ verdicts. Each lane is honest about what it can and cannot do.
 | **NLI** | opt-in (`--nli` / `lanes.nli = true`) | local CPU/GPU inference | model download on first run | Recall filter and confidence signal — never a verdict-giver |
 | **Screen** | opt-in (`--screen` / `lanes.screen = true`; implies jury) | one strong-model call per ~150 units | yes | Whole-config sweep that *nominates* suspicious pairs for the jury — never a verdict-giver |
 | **Jury** | opt-in (`--jury` / `lanes.jury = true`) | LLM API calls | yes | Schema-constrained adjudication of pre-extracted candidate pairs |
-| **TypeSafe** | opt-in (`--typesafe` / `lanes.typesafe = true`; `TYPESAFE_API_KEY`) | `pairs_per_call` (default 20) pairs per call, each in both orderings, plus one small call per band pair; seconds per config | yes | Calibrated typed pair judgments: a verdict-giver with probabilities, thresholded — hands its uncertain band to the jury |
+| **TypeSafe** | opt-in (`--typesafe` / `lanes.typesafe = true`; `TYPESAFE_API_KEY`) | `pairs_per_call` (default 20) pairs per call, each in both orderings, plus one small call per band pair — seconds for small trees, 3–5 min for a realistic config on a cold cache (demo agent: 2,665 pairs, ~250 calls), free on re-scan | yes | Calibrated typed pair judgments: a verdict-giver with probabilities, thresholded — hands its uncertain band to the jury |
 
 A planned **formal lane** (clingo/ASP + Z3 for the formalizable subset, with
 unsat-core witnesses) — is what the reserved codes DTC06 and DTC07 are waiting for. It does not
@@ -33,7 +35,9 @@ entry costs a false positive.
 the same configuration, the deterministic lane produces byte-identical findings. There is no
 randomness, no wall-clock dependence in results (timings in `stats` vary, findings do not),
 and no environment dependence. Safe for CI gating and air-gapped repos. Deterministic findings
-carry `"lanes": ["deterministic"]` and `confidence: 1.0`.
+carry `"lanes": ["deterministic"]`; their `confidence` is 1.0 for exact frame, numeric and
+scope clashes and a fixed lower value (0.6–0.9) for the heuristic classes — stale
+references, drifted near-duplicates, description mismatch.
 
 Numbers, in particular, stay here permanently: numeric and unit comparisons are routed to the
 deterministic interval checker because NLI models are demonstrably weak on them (EQUATE), and
@@ -106,9 +110,9 @@ miscalibrated out-of-domain — treat scores as a ranking, never as probabilitie
 
 - **Symmetrization:** every pair is scored in both orders — (A premise, B hypothesis) and
   (B, A) — and the max contradiction probability is used.
-- **Negation-bias guard:** NLI models over-predict contradiction when negation words are
-  present (dataset artifacts; Poliak 2018, Hossain 2020). Pairs where *both* sides are
-  negation-dense get their confidence cut (0.7 → 0.55) when surfaced standalone.
+- **Negation bias:** NLI models over-predict contradiction when negation words are
+  present (dataset artifacts; Poliak 2018, Hossain 2020) — one more reason a high score is
+  never treated as a verdict; only the low-score auto-clear band is used.
 - **Overlap guard (HANS):** high lexical overlap must not imply conflict. This is handled by
   detector ordering — the deterministic conflict router and duplicate detector claim pairs
   first, so wordy paraphrases are classified as redundancy, not contradiction.
@@ -200,7 +204,7 @@ The verdict enum: `CONTRADICTORY`, `CONDITIONAL_CONFLICT`, `PRECEDENCE_RESOLVED`
 | Verdict | Result |
 |---|---|
 | `CONTRADICTORY` | DTC01 finding at `warning`, `lanes: ["jury"]` |
-| `CONDITIONAL_CONFLICT` | DTC02 finding at `warning` (with the model's `overlap_condition` as the witness) |
+| `CONDITIONAL_CONFLICT` | DTC02 finding at `advisory` (DTC03 when `conflict_type` is `numeric`; DTP03 when exactly one side is a deliberate carve-out), with the model's `overlap_condition` as the witness |
 | `REDUNDANT` | DTR01 finding at `advisory` |
 | `PRECEDENCE_RESOLVED` | no finding (declared hierarchy resolves it) |
 | `DISTINCT` | no finding |
@@ -212,8 +216,9 @@ sole source of an `error`.
 
 - Screen-lane nominations come **first** when `--screen` is on (a strong model chose them by
   reading the whole config, including pairs blocking could never form).
-- Then, if the NLI lane ran: the not-cleared band, best-scored first (auto-cleared pairs are
-  never adjudicated).
+- Then the uncertain bands handed on by the calibrated lanes, best-scored first and merged
+  by pair: the TypeSafe lane's `[uncertain_low, tau)` band and, if the NLI lane ran, its
+  not-cleared band (auto-cleared pairs, and pairs TypeSafe cleared, are never adjudicated).
 - Otherwise: unclaimed pairs ranked by lexical similarity, highest first.
 - Hard cap: `jury_max_pairs` (default **200** pairs) — the budget valve.
 
@@ -244,11 +249,14 @@ have been observed to yield 80 distinct outputs). What actually makes jury resul
 Pin the model snapshot in `[detangle.jury]` and treat any model migration as a calibration
 event — model aliases drift (a documented case degraded 84% → 51% in three months).
 
-### Measured results (live validation, 2026-08-31)
+### Measured results (live validation)
 
-The full cascade was validated end-to-end in this repository with the `claude-cli`
-backend on the novel-phrasing holdout — 30 conflict + 19 benign trees
-(`python -m benchmarks.run_eval --holdout --lanes ... --jury-model ... --screen-model ...`):
+The full cascade was validated end-to-end in this repository on the novel-phrasing holdout
+— 30 conflict + 19 benign trees — with the `claude-cli` backend for the LLM rows
+(2026-08-31; `python -m benchmarks.run_eval --holdout --lanes ... --jury-model ...
+--screen-model ...`) and against the TypeSafe API for the TypeSafe row (2026-09-17;
+`--lanes typesafe` with `TYPESAFE_API_KEY` set; the `hybrid-eval` workflow reproduced it on a
+GitHub runner in 8 s):
 
 | configuration | strict recall | class-lenient | FPs (all advisory-tier) |
 |---|---|---|---|
@@ -262,8 +270,9 @@ backend on the novel-phrasing holdout — 30 conflict + 19 benign trees
 
 Two structural lessons in that table. First, a pair-level jury plateaus at ~a third of
 conflicts regardless of juror strength — the bottleneck is candidate formation, which is
-what the screen lane fixes (the screen configurations are also the only ones that catch
-the procedural/skill-ordering class — 4/4 strict with the `opus` jury). Second, every measured false
+what the screen lane fixes (the screen configurations were the first to catch the
+procedural/skill-ordering class — 4/4 strict with the `opus` jury; the TypeSafe lane, last
+row, catches the same 4/4 from pair questions). Second, every measured false
 positive in every configuration was a CONDITIONAL_CONFLICT verdict — which is why jury
 conditional-conflict findings are emitted at **advisory** severity (never CI-failing),
 while jury CONTRADICTORY findings are warnings. The verdict cache made repeat scans free
@@ -277,8 +286,8 @@ deliberate carve-out — the deterministic router's rule, applied consistently).
 No available backend (no key, no CLI, no base_url) skips the lane with a warning note;
 the scan still completes. API keys are read from the environment only — never written to
 disk, and never required for the deterministic or NLI lanes. Transient backend failures
-(network, CLI errors) are never cached and never produce findings; after three consecutive
-failures the lane aborts with a note.
+(network, CLI errors) are never cached and never produce findings; after three such
+failures in a run the lane aborts with a note.
 
 ```bash
 # local, API backend
@@ -410,8 +419,9 @@ Two design facts the experiments established:
   skill") — TypeSafe's own is-instruction judgment flags them at p≥0.9.
 - **Pair set.** `pairs = "all"` judges every co-activatable unit pair (O(n²): ~8,000 pairs
   for a 134-unit config, ~6M input tokens) and adds ~4 holdout cases over
-  `pairs = "candidates"` (the deterministic lane's blocked pairs; ~1,100 pairs for the
-  same config). Default is `all`; switch to `candidates` for large configs.
+  `pairs = "candidates"` (the deterministic lane's blocked pairs after the lane's high-recall
+  extraction: 2,665 for the same config, not the ~1,100 a plain deterministic scan reports).
+  Default is `all`; switch to `candidates` above ~100 units.
 - **Two passes.** Judgment degrades as the shared state grows (a planted demo pair scores
   0.94 alone vs 0.38 inside a 95-pair batch), so after the batched pass every pair at or
   above `uncertain_low` is re-asked *alone* — a two-unit state, the same two questions
@@ -446,10 +456,11 @@ pairs unjudged and marks the lane incomplete for the baseline's missing-stamp lo
 
 ## Which lane decided what?
 
-Every finding carries a `lanes` array: `["deterministic"]`, `["deterministic", "nli"]` (two
-lanes agree), `["nli"]` (a lead), `["jury"]` (an adjudicated verdict),
-`["jury", "screen"]` (a screen nomination the jury upheld), or `["typesafe"]` (a calibrated
-typed verdict; its `confidence` is the conflict probability), plus a `confidence`
-in [0, 1] — deterministic findings are 1.0, lane findings carry the lane's own confidence. CI
+Every finding carries a `lanes` array: `["deterministic"]`, `["jury"]` (an adjudicated
+verdict), `["jury", "screen"]` (a screen nomination the jury upheld), or `["typesafe"]` (a
+calibrated typed verdict; its `confidence` is the conflict probability), plus a `confidence`
+in [0, 1] — deterministic findings are 1.0 for the exact classes and 0.6–0.9 for the
+heuristic ones, lane findings carry the lane's own confidence. The NLI lane never appears in
+`lanes`: it only clears pairs and ranks the jury's queue. CI
 policy can key off severity alone (the default), since lane-sourced findings already encode
 their reliability in the severity they are allowed to use.

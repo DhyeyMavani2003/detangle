@@ -32,9 +32,11 @@ The deterministic lane (plain `detangle scan`, no LLM lanes) is expected to
 catch **9 of the 14** — C5 (DTP04), C6 (DTC03), C7 (DTC03), C8 (DTC04),
 C9 (DTP04), C10 (DTR01), C11 (DTR02), C12 (DTR05 ×2), C13 (DTS01) — and to
 report **zero** findings on the benign traps below. C1–C4 (order and mood
-conflicts) and C14 (semantic import-order clash) need the NLI/jury lanes:
-their sentences share no frame, antonym, or numeric handle a precision-first
-deterministic rule may fire on.
+conflicts) and C14 (semantic import-order clash) need a semantic lane: their
+sentences share no frame, antonym, or numeric handle a precision-first
+deterministic rule may fire on. The TypeSafe lane (`--typesafe`) catches C1,
+C3, C4 and C14; C2 — an order carried by list position across three lines —
+needs the whole-config screen + jury cascade (`--screen`).
 
 ## Benign traps (must produce NO findings)
 
