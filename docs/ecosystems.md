@@ -35,8 +35,10 @@ Every disagreeing pair gets exactly one of:
 | `cross-tool-only` | No single tool reads both files — they co-apply only in the sense that different tools serve the same repo | 0.3 |
 | `mutually-exclusive` | Provably never co-active (disjoint globs; isolated contexts) | pruned before detection |
 
-Exposure feeds severity: e.g. a direct contradiction between two launch-set files is an
-`error`; the same contradiction where one side is conditionally loaded is a `warning`.
+Exposure feeds severity: e.g. a direct contradiction between two launch-set files, or between
+a launch-set file and a conditionally loaded one, is an `error`; the same contradiction
+between two conditionally loaded units whose triggers merely overlap, or across tools that
+never read both files, is a `warning`.
 
 ---
 

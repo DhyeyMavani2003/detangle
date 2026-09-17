@@ -331,7 +331,9 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
         # measured on the novel-phrasing holdout (single haiku juror): benign
         # false positives concentrate entirely in CONDITIONAL_CONFLICT — the
         # jury's "maybe" bucket — so those land at advisory, never CI-blocking
-        if result["verdict"] == "CONDITIONAL_CONFLICT" or code == "DTP03":
+        # conditional conflicts are the jury's "maybe" bucket and redundancy is
+        # DTR01's advisory class: neither may fail a build on a jury verdict
+        if result["verdict"] in ("CONDITIONAL_CONFLICT", "REDUNDANT") or code == "DTP03":
             sev = Severity.ADVISORY
         else:
             sev = Severity.WARNING

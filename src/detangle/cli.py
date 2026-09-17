@@ -67,6 +67,12 @@ def _build_parser() -> argparse.ArgumentParser:
             help="enable the whole-config LLM screen sweep (implies --jury; strongest model)",
         )
         sp.add_argument(
+            "--typesafe",
+            action="store_true",
+            help="enable the TypeSafe lane: calibrated pairwise conflict judgments "
+            "(needs TYPESAFE_API_KEY)",
+        )
+        sp.add_argument(
             "--deep",
             action="store_true",
             help="thoroughness-first pass: every available lane, per-class screen "
@@ -167,6 +173,13 @@ def _run_baseline(args: argparse.Namespace) -> int:
     if not bpath.is_absolute():
         bpath = root / bpath
     bl = load_baseline(bpath)
+    if not bpath.exists():
+        # "no entries" would read as "nothing to triage"; say the file is not there
+        print(
+            f"note: no baseline file at {bpath} — run "
+            f"`detangle scan {args.path} --baseline --update-baseline` first",
+            file=sys.stderr,
+        )
     for w in bl.warnings:
         print(f"warning: {w}", file=sys.stderr)
     if bl.corrupt and args.baseline_command in ("set", "prune"):
@@ -266,6 +279,8 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
         cfg.lane_jury = True
     if args.screen:
         cfg.lane_screen = True
+    if args.typesafe:
+        cfg.lane_typesafe = True
     if args.deep:
         cfg.deep = True
     if args.baseline is not None:

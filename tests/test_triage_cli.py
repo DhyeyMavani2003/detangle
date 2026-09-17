@@ -145,6 +145,7 @@ class TestDeepExpansion:
         write_tree(tmp_path, {"CLAUDE.md": "# T\n\nNever push to main.\n"})
         cfg = Config(root=tmp_path)
         cfg.deep = True
+        cfg.typesafe_api_key_env = "DETANGLE_TEST_NO_SUCH_KEY"  # never a developer's real key
         result = scan(cfg)  # lanes skip gracefully without backends/models
         assert cfg.lane_screen and cfg.lane_jury and cfg.lane_nli
         assert cfg.jury_max_pairs >= 1000
@@ -175,6 +176,15 @@ class TestBaselineCli:
         report = json.loads((tmp_path / "r.json").read_text())
         assert report["baseline"]["new"] >= 1
         assert all(f["baseline"] == "new" for f in report["findings"])
+
+    def test_list_without_a_baseline_file_says_so(self, tmp_path: Path, capsys):
+        """An empty answer must not read as "nothing to triage" when the file
+        simply is not there (e.g. the wrong scan root)."""
+        write_tree(tmp_path, {"CLAUDE.md": "# T\n\nNever push to main.\n"})
+        assert main(["baseline", "list", str(tmp_path), "--status", "new"]) == 0
+        captured = capsys.readouterr()
+        assert "no baseline entries" in captured.out
+        assert "no baseline file" in captured.err and "--update-baseline" in captured.err
 
     def test_list_set_prune_cycle(self, tmp_path: Path, capsys):
         bpath = self._seed(tmp_path)

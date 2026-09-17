@@ -94,6 +94,9 @@ def _deep_config(root: Path, cache_dir: Path, deep: bool = True) -> Config:
     cfg.lane_screen = True
     cfg.deep = deep
     cfg.cache_dir = cache_dir
+    # deep also switches the TypeSafe lane on; without a key it skips with a
+    # note, so point it at a key nobody has rather than the developer's env
+    cfg.typesafe_api_key_env = "DETANGLE_TEST_NO_SUCH_KEY"
     return cfg
 
 

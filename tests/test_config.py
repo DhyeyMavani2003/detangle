@@ -282,6 +282,18 @@ class TestJuryTable:
 # ---------------------------------------------------------------------------
 
 
+class TestMixedTopLevelAndTable:
+    def test_top_level_keys_survive_beside_subtables(self, tmp_path: Path) -> None:
+        # the documented nightly config: a top-level `deep = true` next to a
+        # [detangle.baseline] table — both must be read
+        write_config(
+            tmp_path, 'deep = true\n\n[detangle.baseline]\npath = "b.json"\nupdate = true\n'
+        )
+        cfg = load_config(tmp_path)
+        assert cfg.deep is True and cfg.update_baseline is True
+        assert str(cfg.baseline_path).endswith("b.json")
+
+
 class TestInvalidToml:
     def test_syntax_error_raises_config_error(self, tmp_path: Path) -> None:
         write_config(tmp_path, "this is not toml ===\n")

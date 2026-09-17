@@ -79,7 +79,7 @@ def band_pairs(
     Returns (cleared, not_cleared) where not_cleared is ranked by score
     descending (the jury adjudicates it in that order).
     """
-    unclaimed = [p for p in ctx.pairs if not ctx.is_claimed(p)]
+    unclaimed = [p for p in ctx.pairs if not ctx.is_claimed(p) and p.key not in ctx.cleared]
     if not unclaimed:
         return [], []
     scores = scorer.contradiction_scores([(p.a.normalized, p.b.normalized) for p in unclaimed])
@@ -116,8 +116,12 @@ def run_nli_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) -> 
     )
 
     if cfg.lane_jury:
-        # the jury consumes only the not-cleared band, best-scored first
-        ctx.nli_not_cleared = not_cleared
+        # the jury consumes only the not-cleared band, best-scored first —
+        # merged with a band another lane (TypeSafe) already handed on, never
+        # replacing it
+        prev = getattr(ctx, "nli_not_cleared", None) or []
+        have = {p.key for p, _ in prev}
+        ctx.nli_not_cleared = prev + [t for t in not_cleared if t[0].key not in have]
     # standalone: no finding is ever emitted from an NLI score alone — a high
     # contradiction score cannot distinguish "conflicting" from merely
     # "different" prescriptions (measured; see module docstring)

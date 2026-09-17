@@ -1,11 +1,10 @@
 # detangle config for the demo agent — the nightly deep scan reads this.
-# The PR-time CI gate runs deterministic-only (no backend in CI), so the
-# lane/model choices here only take effect where a backend is available.
+# The PR-time CI gate runs deterministic-only. The LLM lanes pick their
+# backend with `auto` (the claude CLI on a developer machine, ANTHROPIC_API_KEY
+# on a runner) and each backend's default model tiers; the TypeSafe lane
+# needs TYPESAFE_API_KEY. Lanes whose backend or key is absent skip.
 [detangle]
 fail_on = "error"
 
-[detangle.jury]
-model = "sonnet"        # claude-cli alias; nightly runs ride the CLI backend
-
-[detangle.screen]
-model = "opus"
+[detangle.typesafe]
+pairs = "candidates"    # 134 units: the deterministic lane's blocked pairs, not all O(n²)
