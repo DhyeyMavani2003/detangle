@@ -53,13 +53,15 @@ jobs:
           restore-keys: |
             detangle-cache-${{ env.TARGET }}-
       - name: Deep scan
-        # Needs the ANTHROPIC_API_KEY repository secret for the LLM lanes.
-        # Without it the LLM lanes skip gracefully and the run degrades to the
-        # deterministic lane. The exit code is captured (not raised here) so
-        # the report and refreshed baseline still upload; the last step of the
-        # job re-exits with it so failures surface as the job's conclusion.
+        # Needs the ANTHROPIC_API_KEY repository secret for the LLM lanes and
+        # TYPESAFE_API_KEY for the TypeSafe lane. Without them those lanes skip
+        # gracefully and the run degrades to the deterministic lane. The exit
+        # code is captured (not raised here) so the report and refreshed
+        # baseline still upload; the last step of the job re-exits with it so
+        # failures surface as the job's conclusion.
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         run: |
           set +e
           DEEP_FLAG='--deep'

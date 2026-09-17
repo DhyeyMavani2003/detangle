@@ -398,6 +398,18 @@ Two design facts the experiments established:
   for a 134-unit config, ~6M input tokens) and adds ~4 holdout cases over
   `pairs = "candidates"` (the deterministic lane's blocked pairs; ~1,100 pairs for the
   same config). Default is `all`; switch to `candidates` for large configs.
+- **Two passes.** Judgment degrades as the shared state grows (a planted demo pair scores
+  0.94 alone vs 0.38 inside a 95-pair batch), so after the batched pass every pair at or
+  above `uncertain_low` is re-asked *alone* — a two-unit state, the same two questions
+  (`rejudge = true`). The solo verdict decides clearing and the class; a pair **fires only
+  when both passes see the conflict**. Measured on the demo agent (2,665 candidate pairs,
+  131 re-asked in 131 small calls, ~50 s): 58 of the 116 band pairs cleared — none of them
+  a conflict a human had marked `open` in the triage baseline — so the jury receives half
+  the pairs; the four planted pairs the lane owns stayed emitted and sharpened (C4
+  0.86 → 0.90, C14 0.80 → 0.86). Letting the solo verdict *replace* the batched one was
+  measured and rejected: it promoted ten borderline pairs, three of which a human had
+  already triaged as not conflicts, for one genuine emergent conflict — which the jury
+  finds from the band anyway.
 
 **What it cannot do.** A pair question sees two sentences. Conflicts carried by *list
 position* across several lines (a skill whose steps are ordered tests → typecheck → lint

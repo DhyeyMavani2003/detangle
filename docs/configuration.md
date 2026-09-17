@@ -67,6 +67,7 @@ tau = 0.7               # emit at/above this conflict probability
 strong = 0.9            # warning severity at/above (else advisory)
 uncertain_low = 0.3     # [uncertain_low, tau) is handed to the jury when enabled
 pairs_per_call = 20     # small batches: judgment quality degrades with state size
+rejudge = true          # re-ask band-or-above pairs alone after the batched pass
 
 [detangle.baseline]
 path = ".detangle-baseline.json"
@@ -201,6 +202,7 @@ The screen shares the jury's `backend` / `base_url` / `api_key_env` transport se
 | `strong` | float | `0.9` | At/above this a non-conditional verdict is `warning`; below, `advisory`. |
 | `uncertain_low` | float | `0.3` | Pairs with probability in `[uncertain_low, tau)` are handed to the jury lane when it is enabled. |
 | `pairs_per_call` | int | `20` | Pairs batched per request (each in both orderings). Keep small: judgment quality measurably degrades as the shared state grows. |
+| `rejudge` | bool | `true` | Second pass: every pair the batched pass scored at or above `uncertain_low` is re-asked alone (a two-unit state, same questions). The solo verdict clears batched noise and picks the class; a pair fires only when both passes see the conflict. Costs one small call per such pair (a few percent of pairs). |
 | `max_pairs` | int | `20000` | Safety cap on pairs judged per run. |
 
 Thresholds must satisfy `0 <= uncertain_low <= tau <= strong <= 1`.
@@ -301,7 +303,7 @@ Full scan of `path` (default: `.`).
 | `--jury` | Enable the jury lane for this run |
 | `--screen` | Enable the screen lane for this run (implies `--jury`) |
 | `--typesafe` | Enable the TypeSafe lane for this run (needs `TYPESAFE_API_KEY`) |
-| `--deep` | Thoroughness-first run: every available lane, per-class screen sweeps (ten strong-model passes instead of one), jury cap lifted to 1000. Hours-scale; meant for scheduled CI. See [triage.md](triage.md). |
+| `--deep` | Thoroughness-first run: every available lane (TypeSafe when `TYPESAFE_API_KEY` is set, NLI when installed, screen + jury), per-class screen sweeps (ten strong-model passes instead of one), jury cap lifted to 1000. Hours-scale; meant for scheduled CI. See [triage.md](triage.md). |
 | `--baseline [PATH]` | Use a baseline file for triage. Given without a value, means `.detangle-baseline.json` at the scan root (or `[detangle.baseline] path`). |
 | `--update-baseline` | Write the post-scan state back to the baseline: unseen findings recorded as `new`, disappeared ones stamped `missing_since`, prior verdicts kept. |
 | `--only-new` | Report only findings the baseline does not already answer: `new` entries and regressions. |

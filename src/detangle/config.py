@@ -41,6 +41,7 @@ class Config:
     typesafe_uncertain_low: float = 0.3  # [low, tau) is handed to the jury when enabled
     typesafe_max_pairs: int = 20_000
     typesafe_pairs_per_call: int = 20  # small batches: judgment quality degrades with state size
+    typesafe_rejudge: bool = True  # re-ask band-or-above pairs alone after the batched pass
     include_soft: bool = True  # report advisory-tier findings
     fail_on: Severity = Severity.ERROR  # exit non-zero at or above this severity
     conflict_budget: int | None = None  # allowed open findings before failure (ratchet)
@@ -163,6 +164,7 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
                 "typesafe.pairs_per_call", ts.get("pairs_per_call", cfg.typesafe_pairs_per_call)
             ),
         )
+        cfg.typesafe_rejudge = bool(ts.get("rejudge", cfg.typesafe_rejudge))
         if not (
             0.0 <= cfg.typesafe_uncertain_low <= cfg.typesafe_tau <= cfg.typesafe_strong <= 1.0
         ):

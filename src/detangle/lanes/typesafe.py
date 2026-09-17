@@ -22,6 +22,19 @@ deterministic router: conditionally-loaded layer vs another layer is a
 cross-layer collision (DTP04), overlapping path-scoped rules a precedence
 ambiguity (DTP02).
 
+Judging runs in two passes. The batched pass shares one state across
+``pairs_per_call`` pairs; because judgment measurably degrades as the shared
+state grows (docs/lanes.md), every pair whose batched conflict mass reaches
+the uncertain band is then re-asked ALONE — a two-unit state, the same two
+questions. The solo verdict decides whether the pair is cleared or stays in
+the band (batched noise clears, so the jury receives half the pairs), but a
+pair FIRES only when both passes see the conflict: a promotion the batched
+pass did not support is handed to the jury instead of emitted (precision
+first — measured on the demo agent, such promotions were mostly pairs a
+human had already rejected). Emission needs every reading to see the
+conflict (the minimum mass crosses ``tau``); clearing needs both orderings
+to agree there is none (the maximum mass stays below ``uncertain_low``).
+
 Composability: pairs judged confidently are claimed; pairs whose conflict
 mass lands in the uncertain band are handed to the jury lane (when enabled)
 through the same channel the NLI lane uses, so ``--typesafe --jury`` means
@@ -270,14 +283,24 @@ def _select_pairs(cfg: Config, ctx: AnalysisContext) -> list[UnitPair]:
 
 
 def judge_pairs(
-    client: TypeSafeClient, pairs: list[UnitPair], cache, pairs_per_call: int = 20
+    client: TypeSafeClient,
+    pairs: list[UnitPair],
+    cache,
+    pairs_per_call: int = 20,
+    *,
+    solo: bool = False,
 ) -> dict[str, dict]:
-    """Return {pair.key: {"probs": {...}, "probs_swapped": {...}}} for every pair,
-    batching uncached pairs into as few requests as the token budget allows."""
+    """Return {pair.key: {"probs": {...}, "probs_swapped": {...}, "batch": n}} for
+    every pair, batching uncached pairs into as few requests as the token
+    budget allows. ``solo`` asks one pair per request (a two-unit state) under
+    its own cache key, so a pair's batched and solo verdicts coexist."""
+    suffix = "|swap-both|solo" if solo else "|swap-both"
+    if solo:
+        pairs_per_call = 1
     results: dict[str, dict] = {}
     pending: list[UnitPair] = []
     for p in pairs:
-        hit = cache.get(cache.key(client.ident, _PROMPT_HASH, f"{p.key}|swap-both"))
+        hit = cache.get(cache.key(client.ident, _PROMPT_HASH, f"{p.key}{suffix}"))
         if hit is not None:
             results[p.key] = hit
         else:
@@ -314,11 +337,31 @@ def judge_pairs(
                 "probs_swapped": rev.get("probabilities")
                 if isinstance(rev.get("probabilities"), dict)
                 else None,
+                "batch": len(chunk),
             }
-            cache.put(cache.key(client.ident, _PROMPT_HASH, f"{p.key}|swap-both"), rec)
+            cache.put(cache.key(client.ident, _PROMPT_HASH, f"{p.key}{suffix}"), rec)
             results[p.key] = rec
         cache.save()
     return results
+
+
+def _mass(rec: dict) -> float:
+    """Conflict mass of a judged pair for EMISSION: the minimum over the two
+    orderings and, for a pair judged in both passes, over the batched and the
+    solo verdict — every reading must see the conflict before it fires."""
+    probs = rec["probs"]
+    swapped = rec.get("probs_swapped") or probs
+    m = min(_conflict_mass(probs), _conflict_mass(swapped))
+    return min(m, rec["batched_mass"]) if "batched_mass" in rec else m
+
+
+def _mass_max(rec: dict) -> float:
+    """Conflict mass of a judged pair for CLEARING: the maximum over the two
+    orderings — a pair leaves the uncertain band only when both orderings
+    agree it is below it."""
+    probs = rec["probs"]
+    swapped = rec.get("probs_swapped") or probs
+    return max(_conflict_mass(probs), _conflict_mass(swapped))
 
 
 def _verdict(rec: dict) -> tuple[str | None, float, str]:
@@ -329,7 +372,7 @@ def _verdict(rec: dict) -> tuple[str | None, float, str]:
     the orderings' argmaxes flip on near-ties, the mean does not."""
     probs = rec["probs"]
     swapped = rec.get("probs_swapped") or probs
-    mass = min(_conflict_mass(probs), _conflict_mass(swapped))
+    mass = _mass(rec)
     mean = {c: (probs.get(c, 0.0) + swapped.get(c, 0.0)) / 2 for c in CONFLICT_CLASSES}
     cls = max(CONFLICT_CLASSES, key=lambda c: mean[c])
     redundant = min(float(probs.get("redundant", 0.0)), float(swapped.get("redundant", 0.0)))
@@ -382,6 +425,31 @@ def run_typesafe_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]
         ctx.corpus.notes.append(f"typesafe lane: {e}; lane incomplete")
         judged = {}
 
+    # second pass: everything the batched pass put at or above the uncertain
+    # band is re-asked alone. The solo verdict decides clearing and the class;
+    # emission still needs the batched pass's agreement (the solo record
+    # carries the batched mass, and _mass takes the minimum). A pair that
+    # already had the request to itself is not asked again.
+    rejudged = 0
+    if judged and cfg.typesafe_rejudge:
+        band = [
+            p
+            for p in pairs
+            if p.key in judged
+            and judged[p.key].get("batch") != 1
+            and _mass_max(judged[p.key]) >= cfg.typesafe_uncertain_low
+        ]
+        try:
+            solo = judge_pairs(client, band, cache, solo=True)
+        except JuryError as e:
+            ctx.corpus.notes.append(
+                f"typesafe lane: solo re-judge failed ({e}); batched verdicts kept"
+            )
+            solo = {}
+        for key, rec in solo.items():
+            judged[key] = dict(rec, batched_mass=_mass(judged[key]))
+        rejudged = len(solo)
+
     emitted = 0
     uncertain: list[tuple[UnitPair, float]] = []
     for pair in pairs:
@@ -431,8 +499,8 @@ def run_typesafe_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]
             )
             ctx.claim(pair)
             emitted += 1
-        elif mass >= cfg.typesafe_uncertain_low:
-            uncertain.append((pair, mass))
+        elif _mass_max(rec) >= cfg.typesafe_uncertain_low:
+            uncertain.append((pair, _mass_max(rec)))
 
     if judged and len(judged) == len(pairs):
         ctx.lanes_ran.add("typesafe")
@@ -442,7 +510,7 @@ def run_typesafe_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]
         ctx.nli_not_cleared = sorted(uncertain, key=lambda t: -t[1])
     ctx.corpus.notes.append(
         f"typesafe lane: judged {len(judged)} pair(s) with {client.ident} in "
-        f"{client.calls} call(s); {emitted} finding(s), {len(uncertain)} uncertain"
-        + (" (handed to the jury)" if cfg.lane_jury else "")
+        f"{client.calls} call(s), {rejudged} re-judged alone; {emitted} finding(s), "
+        f"{len(uncertain)} uncertain" + (" (handed to the jury)" if cfg.lane_jury else "")
     )
     return findings

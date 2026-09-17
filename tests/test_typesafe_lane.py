@@ -34,17 +34,23 @@ TREE = {
 
 class _Scripted:
     """Answers every relation question: the lint/test pair is contradictory
-    (both orderings), everything else distinct."""
+    (both orderings), everything else distinct. ``batched`` is the lint/test
+    answer inside a shared state, ``alone`` the answer when the pair has the
+    request to itself (the lane's solo re-ask); None means "same as batched"."""
 
     def __init__(self):
         self.calls = 0
         self.questions_seen = 0
+        self.state_sizes: list[int] = []
         self.fail_first = False
+        self.batched = {"contradictory": 0.92, "conditional_conflict": 0.05, "distinct": 0.03}
+        self.alone: dict | None = None
 
     def answer(self, body: dict) -> dict:
         self.calls += 1
         self.questions_seen += len(body["questions"])
         units = body["state"]["units"]
+        self.state_sizes.append(len(units))
         answers = {}
         for qid, q in body["questions"].items():
             assert q["type"] == "choice" and q["criteria"] == RELATION_CRITERIA
@@ -52,9 +58,7 @@ class _Scripted:
             texts = units[a]["text"] + " " + units[b]["text"]
             if "linter first" in texts and "Start with the test suite" in texts:
                 probs = dict.fromkeys(RELATION_CRITERIA, 0.0)
-                probs["contradictory"] = 0.92
-                probs["conditional_conflict"] = 0.05
-                probs["distinct"] = 0.03
+                probs.update(self.alone if (len(units) == 2 and self.alone) else self.batched)
             else:
                 probs = dict.fromkeys(RELATION_CRITERIA, 0.0)
                 probs["distinct"] = 0.97
@@ -130,10 +134,13 @@ def test_lane_emits_batched_swapped_verdicts_and_caches(tmp_path: Path, server, 
     assert f.code == "DTP04" and f.severity.label == "warning"
     assert "contradictory" in f.message
     assert {ev.span.path for ev in f.evidence} == set(TREE)
-    assert scripted.calls == 1, "all pairs of a small config batch into one request"
-    # every pair asked in both orderings inside that one request
-    assert scripted.questions_seen % 2 == 0 and scripted.questions_seen >= 2
-    assert any("typesafe lane: judged" in n for n in r1.corpus.notes)
+    # all pairs of a small config batch into one request; the one pair that
+    # scored into the band or above is then re-asked alone (two-unit state)
+    assert scripted.calls == 2
+    assert scripted.state_sizes[0] > 2 and scripted.state_sizes[1] == 2
+    # every pair asked in both orderings inside the batched request
+    assert scripted.questions_seen % 2 == 0 and scripted.questions_seen >= 4
+    assert any("typesafe lane: judged" in n and "1 re-judged alone" in n for n in r1.corpus.notes)
 
     # second scan: verdicts cached -> zero calls, identical findings
     calls_before = scripted.calls
@@ -183,6 +190,59 @@ def test_uncertain_band_goes_to_jury_channel(tmp_path: Path, server, monkeypatch
     assert mass == pytest.approx(0.97)
 
 
+def test_solo_rejudge_replaces_batched_verdict(tmp_path: Path, server, monkeypatch):
+    """The second pass re-asks band-or-above pairs alone and the solo answer
+    wins in both directions; ``rejudge = false`` keeps the batched verdict."""
+    scripted, endpoint = server
+    monkeypatch.setenv("TS_TEST_KEY", "test-key")
+    captured = {}
+
+    def fake_jury(cfg, ctx, findings):
+        captured["band"] = list(getattr(ctx, "nli_not_cleared", None) or [])
+        return findings
+
+    monkeypatch.setattr("detangle.lanes.jury.run_jury_lane", fake_jury)
+
+    # batched noise: confident in the shared state, distinct alone -> nothing
+    # emitted and nothing handed on
+    write_tree(tmp_path / "noise", TREE)
+    scripted.alone = {"distinct": 0.97, "redundant": 0.03}
+    r = scan(_cfg(tmp_path / "noise", endpoint, lane_jury=True))
+    assert not [f for f in r.findings if "typesafe" in f.lanes]
+    assert captured["band"] == []
+    assert scripted.calls == 2 and scripted.state_sizes[-1] == 2
+
+    # batched near-miss, confident alone: a promotion the batched pass did not
+    # support is NOT emitted — it stays in the band for the jury, scored by
+    # the solo verdict
+    write_tree(tmp_path / "promote", TREE)
+    scripted.batched = {"contradictory": 0.45, "distinct": 0.55}
+    scripted.alone = {"contradictory": 0.92, "conditional_conflict": 0.05, "distinct": 0.03}
+    r = scan(_cfg(tmp_path / "promote", endpoint, lane_jury=True))
+    assert not [f for f in r.findings if "typesafe" in f.lanes]
+    assert len(captured["band"]) == 1 and captured["band"][0][1] == pytest.approx(0.97)
+
+    # both passes see the conflict, the solo pass less strongly: emitted at the
+    # weaker mass (advisory, below `strong`)
+    write_tree(tmp_path / "soften", TREE)
+    scripted.batched = {"contradictory": 0.92, "conditional_conflict": 0.05, "distinct": 0.03}
+    scripted.alone = {"contradictory": 0.75, "distinct": 0.25}
+    r = scan(_cfg(tmp_path / "soften", endpoint, lane_jury=True))
+    ts = [f for f in r.findings if "typesafe" in f.lanes]
+    assert len(ts) == 1 and ts[0].confidence == pytest.approx(0.75)
+    assert ts[0].severity.label == "advisory" and captured["band"] == []
+
+    # rejudge off: one batched call, the band verdict stands and goes to the jury
+    write_tree(tmp_path / "off", TREE)
+    scripted.batched = {"contradictory": 0.45, "distinct": 0.55}
+    calls_before = scripted.calls
+    r = scan(_cfg(tmp_path / "off", endpoint, lane_jury=True, typesafe_rejudge=False))
+    assert scripted.calls == calls_before + 1
+    assert not [f for f in r.findings if "typesafe" in f.lanes]
+    assert len(captured["band"]) == 1 and captured["band"][0][1] == pytest.approx(0.45)
+    assert any("0 re-judged alone" in n for n in r.corpus.notes)
+
+
 def test_verdict_uses_min_mass_and_mean_class_and_detects_redundancy():
     base = dict.fromkeys(RELATION_CRITERIA, 0.0)
     # orderings disagree on flavor: the MEAN distribution picks the class,
@@ -212,6 +272,9 @@ def test_config_parsing_and_validation(tmp_path: Path):
     cfg = load_config(tmp_path)
     assert cfg.lane_typesafe and cfg.typesafe_model == "jev-2"
     assert cfg.typesafe_pairs == "candidates" and cfg.typesafe_tau == 0.6
+    assert cfg.typesafe_rejudge is True
+    (tmp_path / ".detangle.toml").write_text("[detangle.typesafe]\nrejudge = false\n")
+    assert load_config(tmp_path).typesafe_rejudge is False
     (tmp_path / ".detangle.toml").write_text("[detangle.typesafe]\ntau = 0.95\nstrong = 0.5\n")
     with pytest.raises(Exception, match="thresholds"):
         load_config(tmp_path)
