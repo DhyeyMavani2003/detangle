@@ -36,10 +36,15 @@ from .findings import Finding
 
 STATUSES = ("new", "open", "accepted", "resolved")
 
-# Codes that in practice re-classify into each other between runs (an LLM
-# lane may call the same pair DTC01 one night and DTC02 the next); a
-# pair_key match within this family keeps the human verdict attached.
-CONFLICT_FAMILY = frozenset({"DTC01", "DTC02", "DTC03", "DTP03", "DTR01"})
+# Codes that in practice re-classify into each other between runs: an LLM
+# lane may call the same pair DTC01 one night and DTC02 the next, and the
+# TypeSafe lane's router-mirroring overlay labels a memory-vs-skill clash
+# DTP04 and an overlapping-glob clash DTP02 where the jury said DTC01/DTC02.
+# A pair_key match within this family keeps the human verdict attached — the
+# verdict was about the pair, not about the code a lane happened to choose.
+CONFLICT_FAMILY = frozenset(
+    {"DTC01", "DTC02", "DTC03", "DTC04", "DTC05", "DTC08", "DTP02", "DTP03", "DTP04", "DTR01"}
+)
 
 _QUOTE_CAP = 200
 

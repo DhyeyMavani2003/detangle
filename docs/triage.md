@@ -53,7 +53,11 @@ Every entry carries two ids because two different things must survive:
   is DTC01 vs DTC02 and therefore a different fingerprint. Your verdict was about the
   *pair of instructions*, not about the code a lane happened to choose, so the verdict is
   matched by `pair_key` as well: a re-classified pair keeps its human answer instead of
-  resurfacing as "new".
+  resurfacing as "new". The codes treated as one pair verdict are everything a pair-level
+  lane may route the same two instructions to — DTC01–DTC05, DTC08, DTP02–DTP04 and DTR01
+  (the TypeSafe lane's overlay says DTP04 where the jury said DTC01 for the same
+  memory-vs-skill clash; both inherit the verdict). Structural codes about one file or one
+  description (stale references, dead scopes, routing ambiguity) never adopt a pair verdict.
 
 Matching is deliberately conservative: exact fingerprint matches are claimed first
 (across the whole run — a sibling-code finding can never steal an entry that
@@ -224,7 +228,10 @@ jobs:
 
       - name: Deep scan against the baseline
         env:
+          # repository secrets (Settings → Secrets and variables → Actions);
+          # each lane skips gracefully when its key is absent
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         run: |
           status=0
           detangle scan --deep --baseline --update-baseline \

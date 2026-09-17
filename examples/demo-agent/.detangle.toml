@@ -9,3 +9,6 @@ model = "sonnet"        # claude-cli alias; nightly runs ride the CLI backend
 
 [detangle.screen]
 model = "opus"
+
+[detangle.typesafe]
+pairs = "candidates"    # 134 units: the deterministic lane's blocked pairs, not all O(n²)

@@ -26,52 +26,6 @@
       "missing_since": null
     },
     {
-      "fingerprint": "DTC01:4e22c44dd528",
-      "pair_key": "71c94aad622c+f9edb4440a8a",
-      "code": "DTC01",
-      "status": "open",
-      "note": "planted C1: changelog-before-release — CLAUDE.md vs release skill",
-      "message": "Jury verdict CONTRADICTORY (temporal): A hard-forbids generating release notes before the changelog; B prescribes exactly that order, deriving notes from PR titles and backfilling CHANGELOG.md afterward.",
-      "severity": "warning",
-      "files": [
-        ".claude/skills/release/SKILL.md",
-        "CLAUDE.md"
-      ],
-      "quotes": [
-        "Shipping: run the changelog skill before the release skill so the release notes are assembled from an up-to-date CHANGELOG.md, never the other way around.",
-        "Write the release notes first, straight from the merged PR titles since the last tag; backfill CHANGELOG.md at the very end, once the tag exists, so the changelog can cite the final tag name."
-      ],
-      "lanes": [
-        "jury",
-        "screen"
-      ],
-      "first_seen": "2026-08-31",
-      "missing_since": null
-    },
-    {
-      "fingerprint": "DTC01:8af7f3dad6ad",
-      "pair_key": "19266c33c9bc+88d1dc2cfd2f",
-      "code": "DTC01",
-      "status": "open",
-      "note": "planted C3: migrate-before-deploy — CLAUDE.md vs deploy skill",
-      "message": "Jury verdict CONTRADICTORY (temporal): A requires migrations complete before deploy starts; B requires migrations to happen after canary, mid-deploy. Same event ordered oppositely relative to deploy.",
-      "severity": "warning",
-      "files": [
-        ".claude/skills/deploy/SKILL.md",
-        "CLAUDE.md"
-      ],
-      "quotes": [
-        "Schema changes: run the db-migrate skill to completion before starting the deploy skill.",
-        "Apply any pending database migrations once the canary reports healthy; migrating after the canary keeps a bad migration away from the full fleet."
-      ],
-      "lanes": [
-        "jury",
-        "screen"
-      ],
-      "first_seen": "2026-08-31",
-      "missing_since": null
-    },
-    {
       "fingerprint": "DTC02:05e720239f0d",
       "pair_key": "58d7e261ff1e+d6e25bed9fd6",
       "code": "DTC02",
@@ -101,7 +55,7 @@
       "status": "accepted",
       "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
       "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
-      "severity": "info",
+      "severity": "advisory",
       "files": [
         ".claude/skills/changelog/SKILL.md",
         ".claude/skills/release/SKILL.md"
@@ -111,8 +65,7 @@
         "Keeps CHANGELOG.md honest: every user-facing change that merged since the last tag gets an entry a customer could read."
       ],
       "lanes": [
-        "jury",
-        "screen"
+        "typesafe"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null
@@ -822,29 +775,6 @@
       "missing_since": null
     },
     {
-      "fingerprint": "DTC02:5433c62e5d0d",
-      "pair_key": "22d03c2e862f+c4391a868188",
-      "code": "DTC02",
-      "status": "open",
-      "note": "planted C14: shared/** import-order shadow (frontend vs backend rules)",
-      "message": "Jury verdict CONDITIONAL_CONFLICT (specificity): For shared/** files, backend.md mandates grouped-then-alphabetized imports while frontend.md mandates one flat alphabetized block; both are hard obligations, mutually exclusive for the same file.",
-      "severity": "advisory",
-      "files": [
-        ".claude/rules/backend.md",
-        ".claude/rules/frontend.md"
-      ],
-      "quotes": [
-        "Group import statements by layer — node builtins, then external packages, then internal modules — and alphabetize within each group; the shared packages follow this grouped order as well.",
-        "Sort import statements alphabetically in one flat block; the shared packages follow the same flat ordering, so a file moved between apps/web and shared needs no import shuffle."
-      ],
-      "lanes": [
-        "jury",
-        "screen"
-      ],
-      "first_seen": "2026-08-31",
-      "missing_since": null
-    },
-    {
       "fingerprint": "DTC02:550b6214d062",
       "pair_key": "3656001623ad+ebf04b34885a",
       "code": "DTC02",
@@ -1287,29 +1217,6 @@
       "missing_since": null
     },
     {
-      "fingerprint": "DTC02:8ae4befa7bc6",
-      "pair_key": "769da412ea9d+cec35cd70aec",
-      "code": "DTC02",
-      "status": "open",
-      "note": "planted C4: imperative vs past-tense commit subjects",
-      "message": "Jury verdict CONDITIONAL_CONFLICT (specificity): A mandates imperative mood for all commit subjects always; B mandates past tense for the changelog commit specifically. Both hard-oblige, same artifact, incompatible grammatical mood.",
-      "severity": "advisory",
-      "files": [
-        ".claude/skills/changelog/SKILL.md",
-        "CLAUDE.md"
-      ],
-      "quotes": [
-        "Write commit subjects in the imperative mood (\"add board filters\", not \"added board filters\") and keep them at most 72 characters.",
-        "Write the commit subject for the regenerated changelog in the past tense as well (\"Updated changelog for the June train\") so it matches the entry headings."
-      ],
-      "lanes": [
-        "jury",
-        "screen"
-      ],
-      "first_seen": "2026-08-31",
-      "missing_since": null
-    },
-    {
       "fingerprint": "DTC02:96290ccce101",
       "pair_key": "58d7e261ff1e+8afb5840f5b8",
       "code": "DTC02",
@@ -1726,29 +1633,6 @@
       ],
       "lanes": [
         "jury"
-      ],
-      "first_seen": "2026-08-31",
-      "missing_since": null
-    },
-    {
-      "fingerprint": "DTC02:c7117a4e963f",
-      "pair_key": "2bdff1183575+2cef40797056",
-      "code": "DTC02",
-      "status": "accepted",
-      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
-      "message": "NEEDS_HUMAN: the jury could not produce a stable verdict (order instability (DISTINCT vs CONDITIONAL_CONFLICT)).",
-      "severity": "info",
-      "files": [
-        ".claude/skills/hotfix/SKILL.md",
-        "CLAUDE.md"
-      ],
-      "quotes": [
-        "You may add workspace dependencies with pnpm add when a task needs them; call new dependencies out in the PR description.",
-        "No drive-by refactors, no dependency bumps, nothing the incident does not require."
-      ],
-      "lanes": [
-        "jury",
-        "screen"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null
@@ -2244,6 +2128,28 @@
       "missing_since": null
     },
     {
+      "fingerprint": "DTP02:c3a4c9a21126",
+      "pair_key": "22d03c2e862f+c4391a868188",
+      "code": "DTP02",
+      "status": "open",
+      "note": "planted C14: shared/** import-order shadow (frontend vs backend rules)",
+      "message": "TypeSafe verdict conditional_conflict (conflict probability 0.87).",
+      "severity": "advisory",
+      "files": [
+        ".claude/rules/backend.md",
+        ".claude/rules/frontend.md"
+      ],
+      "quotes": [
+        "Group import statements by layer — node builtins, then external packages, then internal modules — and alphabetize within each group; the shared packages follow this grouped order as well.",
+        "Sort import statements alphabetically in one flat block; the shared packages follow the same flat ordering, so a file moved between apps/web and shared needs no import shuffle."
+      ],
+      "lanes": [
+        "typesafe"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
       "fingerprint": "DTP03:f25fa2fc11cc",
       "pair_key": "614b84d8ddb8+b028ee1a362f",
       "code": "DTP03",
@@ -2262,6 +2168,28 @@
       "lanes": [
         "jury",
         "screen"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP04:30d91b4cd575",
+      "pair_key": "769da412ea9d+cec35cd70aec",
+      "code": "DTP04",
+      "status": "open",
+      "note": "planted C4: imperative vs past-tense commit subjects",
+      "message": "TypeSafe verdict conditional_conflict (conflict probability 0.81).",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/changelog/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Write commit subjects in the imperative mood (\"add board filters\", not \"added board filters\") and keep them at most 72 characters.",
+        "Write the commit subject for the regenerated changelog in the past tense as well (\"Updated changelog for the June train\") so it matches the entry headings."
+      ],
+      "lanes": [
+        "typesafe"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null
@@ -2289,6 +2217,72 @@
       "missing_since": null
     },
     {
+      "fingerprint": "DTP04:674d3860bdda",
+      "pair_key": "19266c33c9bc+88d1dc2cfd2f",
+      "code": "DTP04",
+      "status": "open",
+      "note": "planted C3: migrate-before-deploy — CLAUDE.md vs deploy skill",
+      "message": "TypeSafe verdict order_conflict (conflict probability 0.88).",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/deploy/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Schema changes: run the db-migrate skill to completion before starting the deploy skill.",
+        "Apply any pending database migrations once the canary reports healthy; migrating after the canary keeps a bad migration away from the full fleet."
+      ],
+      "lanes": [
+        "typesafe"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP04:7f0d31e94be0",
+      "pair_key": "7a71dbad2809+9f512a5e2c04",
+      "code": "DTP04",
+      "status": "accepted",
+      "note": "force-pushing the hotfix branch is not pushing to main; the planted C5 (never force-push) is owned by the deterministic lane",
+      "message": "TypeSafe verdict conditional_conflict (conflict probability 0.83).",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Never push directly to main; every change lands through a pull request.",
+        "Force-push the branch after each rebase; a force-push is required here because the rebase rewrites every commit on the branch."
+      ],
+      "lanes": [
+        "typesafe"
+      ],
+      "first_seen": "2026-09-17",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP04:8f2198af2f13",
+      "pair_key": "2bdff1183575+2cef40797056",
+      "code": "DTP04",
+      "status": "accepted",
+      "note": "swap-unstable jury abstention; reviewed 2026-08-31, judged distinct",
+      "message": "TypeSafe verdict conditional_conflict (conflict probability 0.72).",
+      "severity": "advisory",
+      "files": [
+        ".claude/skills/hotfix/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "You may add workspace dependencies with pnpm add when a task needs them; call new dependencies out in the PR description.",
+        "No drive-by refactors, no dependency bumps, nothing the incident does not require."
+      ],
+      "lanes": [
+        "typesafe"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
       "fingerprint": "DTP04:b5c11424cd60",
       "pair_key": "3656001623ad+96bf680d587c",
       "code": "DTP04",
@@ -2306,6 +2300,28 @@
       ],
       "lanes": [
         "deterministic"
+      ],
+      "first_seen": "2026-08-31",
+      "missing_since": null
+    },
+    {
+      "fingerprint": "DTP04:c5f9682b8f6a",
+      "pair_key": "71c94aad622c+f9edb4440a8a",
+      "code": "DTP04",
+      "status": "open",
+      "note": "planted C1: changelog-before-release — CLAUDE.md vs release skill",
+      "message": "TypeSafe verdict order_conflict (conflict probability 1.00).",
+      "severity": "warning",
+      "files": [
+        ".claude/skills/release/SKILL.md",
+        "CLAUDE.md"
+      ],
+      "quotes": [
+        "Shipping: run the changelog skill before the release skill so the release notes are assembled from an up-to-date CHANGELOG.md, never the other way around.",
+        "Write the release notes first, straight from the merged PR titles since the last tag; backfill CHANGELOG.md at the very end, once the tag exists, so the changelog can cite the final tag name."
+      ],
+      "lanes": [
+        "typesafe"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null
@@ -2395,7 +2411,7 @@
       "status": "accepted",
       "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
       "message": "Jury verdict REDUNDANT: Both require the same test suite to pass clean/green before merging a PR; identical prescription from two config surfaces with no ordering conflict.",
-      "severity": "warning",
+      "severity": "advisory",
       "files": [
         "AGENTS.md",
         "CLAUDE.md"
@@ -2405,8 +2421,7 @@
         "Land nothing until pnpm test is green; CI runs the same suite and will block the merge otherwise."
       ],
       "lanes": [
-        "jury",
-        "screen"
+        "typesafe"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null
@@ -2486,7 +2501,7 @@
       "status": "accepted",
       "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
       "message": "Jury verdict REDUNDANT: Both instructions state the identical requirement that all changes go through a pull request rather than direct pushes to main; B adds non-conflicting detail.",
-      "severity": "warning",
+      "severity": "advisory",
       "files": [
         "AGENTS.md",
         "CLAUDE.md"
@@ -2496,8 +2511,7 @@
         "Every change lands through a pull request; main is protected and squash-merged."
       ],
       "lanes": [
-        "jury",
-        "screen"
+        "typesafe"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null
@@ -2531,7 +2545,7 @@
       "status": "accepted",
       "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
       "message": "Jury verdict REDUNDANT: Both state the same workspace structure and directory mapping with only cosmetic wording differences; each entails the other.",
-      "severity": "warning",
+      "severity": "advisory",
       "files": [
         "AGENTS.md",
         "CLAUDE.md"
@@ -2541,8 +2555,7 @@
         "Orbit is an issue-tracker SaaS organized as a pnpm workspace: the Next.js web app lives in apps/web, the Fastify API in services/api, and shared TypeScript packages in shared."
       ],
       "lanes": [
-        "jury",
-        "screen"
+        "typesafe"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null
@@ -2689,7 +2702,7 @@
       "status": "accepted",
       "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
       "message": "Jury verdict REDUNDANT: Both mandate the same Postgres-via-Prisma rule; A adds unrelated tooling stipulations but the overlapping claim is identical, so B is fully entailed by A.",
-      "severity": "warning",
+      "severity": "advisory",
       "files": [
         "AGENTS.md",
         "CLAUDE.md"
@@ -2699,8 +2712,7 @@
         "Postgres is accessed through Prisma."
       ],
       "lanes": [
-        "jury",
-        "screen"
+        "typesafe"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null
@@ -2735,7 +2747,7 @@
       "status": "accepted",
       "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
       "message": "Jury verdict REDUNDANT: B explicitly defers to CLAUDE.md's commit conventions and restates the same rule; both prescribe identical squash-merge/PR-title behavior with no divergence.",
-      "severity": "warning",
+      "severity": "advisory",
       "files": [
         "AGENTS.md",
         "CLAUDE.md"
@@ -2745,8 +2757,7 @@
         "Follow the commit conventions documented in CLAUDE.md; the PR title becomes the squashed commit subject."
       ],
       "lanes": [
-        "jury",
-        "screen"
+        "typesafe"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null
@@ -2781,7 +2792,7 @@
       "status": "accepted",
       "note": "intentional cross-surface restatement: AGENTS.md deliberately mirrors CLAUDE.md so non-Claude tools see the same rules",
       "message": "Jury verdict REDUNDANT: Both instructions specify the same trigger point (immediately before commit, after edits) for the same action, describing consistent, mutually reinforcing timing.",
-      "severity": "warning",
+      "severity": "advisory",
       "files": [
         ".claude/skills/pre-commit/SKILL.md",
         "CLAUDE.md"
@@ -2791,8 +2802,7 @@
         "Run this after your edits are complete and staged, immediately before the commit."
       ],
       "lanes": [
-        "jury",
-        "screen"
+        "typesafe"
       ],
       "first_seen": "2026-08-31",
       "missing_since": null

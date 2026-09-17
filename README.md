@@ -70,8 +70,8 @@ What makes the analysis different from a format linter:
   condition under which both instructions apply and cannot be jointly satisfied.
 - **Deterministic core.** The default mode uses zero LLM calls, zero network, and is fully
   reproducible — safe for CI and air-gapped repos. Optional NLI, LLM-screen, LLM-jury, and
-  TypeSafe (typed, calibrated pair judgments — the holdout's best recall at zero false
-  positives, in seconds) lanes add semantic depth (see [docs/lanes.md](docs/lanes.md)).
+  TypeSafe (typed, calibrated pair judgments — the holdout's best recall, 27/30, at zero
+  false positives, in ~20 s) lanes add semantic depth (see [docs/lanes.md](docs/lanes.md)).
 - **Procedural conflicts.** The optional screen lane (`--screen`) has a strong model read the
   whole config — always-on files *and* the skill bodies that join the context when a skill
   fires — and nominate order/process conflicts (lint-before-test vs test-before-lint,
@@ -137,9 +137,14 @@ model = "qwen3:8b"
 ```bash
 # TypeSafe (typed, calibrated pair judgments — a separate lane, not a jury backend):
 export TYPESAFE_API_KEY=...
-detangle scan --typesafe            # seconds per config, 0 measured false positives
+detangle scan --typesafe            # ~20 s per config; 27/30 holdout recall at 0 false positives
 detangle scan --typesafe --jury     # TypeSafe decides what it can; the jury gets the rest
 ```
+
+In GitHub Actions, store the same key as a repository secret named `TYPESAFE_API_KEY`
+(**Settings → Secrets and variables → Actions → New repository secret**): the nightly deep
+scan and the manual `hybrid-eval` workflow read it, and `--deep` switches the lane on
+whenever the variable is present.
 
 (`pip install git+https://github.com/DhyeyMavani2003/detangle` also works once this code
 is on the default branch.)
@@ -267,8 +272,10 @@ memory — a checked-in `.detangle-baseline.json` that records every finding eve
 every human verdict ever given:
 
 - **Overnight**, CI runs `detangle scan --deep --baseline --update-baseline` — every
-  available lane, ten per-class screen sweeps instead of one, jury cap lifted to 1000.
-  Hours are fine; nobody is waiting.
+  available lane (the TypeSafe lane when the `TYPESAFE_API_KEY` secret is set, the screen
+  and jury when an LLM backend is), ten per-class screen sweeps instead of one, jury cap
+  lifted to 1000. Hours are fine; nobody is waiting — though with TypeSafe alone the demo
+  agent's 2,665 candidate pairs are judged in about three minutes.
 - **In the morning**, `detangle baseline list --status new` is a short list of questions.
   Answer each with `detangle baseline set <fingerprint> accepted|open|resolved --note "..."`
   — or edit the JSON by hand; it is built to be hand-edited and reviewed in PRs.

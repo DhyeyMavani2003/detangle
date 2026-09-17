@@ -248,13 +248,31 @@ class TestApplyBaseline:
         assert out.counts["missing"] == 0
         assert out.counts["new"] == 0
 
-    def test_code_drift_outside_family_is_a_new_entry(self) -> None:
-        # DTC04 is not in CONFLICT_FAMILY: same pair, but no adoption
+    @pytest.mark.parametrize("new_code", ["DTP04", "DTP02", "DTC04", "DTC05", "DTC08"])
+    def test_lane_routing_codes_are_one_family(self, new_code: str) -> None:
+        # the TypeSafe lane's overlay labels a memory-vs-skill clash DTP04 and an
+        # overlapping-glob clash DTP02, and its vocabulary DTC04/05/08, where the
+        # jury said DTC01: the human's verdict on the PAIR carries over
         f1 = make_finding(code="DTC01")
         b = Baseline()
         apply_baseline([f1], b, RUN1)
         b.entries[f1.fingerprint].status = "accepted"
-        f2 = make_finding(code="DTC04")
+        b.entries[f1.fingerprint].note = "intentional"
+        f2 = make_finding(code=new_code)
+        out = apply_baseline([f2], b, RUN2)
+        assert f1.fingerprint not in b.entries and b.entries[f2.fingerprint].code == new_code
+        assert b.entries[f2.fingerprint].status == "accepted"
+        assert b.entries[f2.fingerprint].note == "intentional"
+        assert out.findings == [] and out.counts["new"] == 0
+
+    def test_code_drift_outside_family_is_a_new_entry(self) -> None:
+        # DTS01 is not in CONFLICT_FAMILY (a routing ambiguity is not a
+        # re-classification of a pair clash): same pair, but no adoption
+        f1 = make_finding(code="DTC01")
+        b = Baseline()
+        apply_baseline([f1], b, RUN1)
+        b.entries[f1.fingerprint].status = "accepted"
+        f2 = make_finding(code="DTS01")
         out = apply_baseline([f2], b, RUN2)
         assert out.findings == [f2]  # NOT suppressed by the old verdict
         assert out.counts["new"] == 1
