@@ -1,7 +1,7 @@
 """Lightweight lexical similarity (pure Python, deterministic).
 
 Used for blocking and duplicate detection. Deliberately not embeddings:
-the deterministic core must run offline; the NLI/jury lanes add semantics.
+the deterministic core must run offline; the optional lanes add semantics.
 """
 
 from __future__ import annotations

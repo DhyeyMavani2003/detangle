@@ -1,4 +1,4 @@
-"""detangle — merge-conflict detection and CI for English-as-code.
+"""detangle — a linter for AI agent instructions.
 
 Statically analyzes an AI agent's natural-language configuration
 (CLAUDE.md / AGENTS.md hierarchies, skills, rules, subagents, tool and

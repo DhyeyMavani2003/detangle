@@ -136,6 +136,12 @@ the baseline as the answer sheet:
    Or edit `.detangle-baseline.json` directly and commit it — the file is meant to be
    hand-edited, and the PR review of a baseline change *is* the triage record.
 
+   **Adopting detangle on a repo that already has findings?** Answering dozens of them one
+   by one is not the first step. `detangle baseline adopt` marks every `new` entry `open`
+   (known backlog, not blocking) in one go, keeping any note already written, so a
+   `--fail-on-new` gate starts green and fails only on findings that appear later. Work
+   through the backlog at your own pace with `baseline list --status open`.
+
 4. **The next run pre-fills every prior answer.** With `--only-new`, the report contains
    only what the baseline could not answer: genuinely new findings and regressions.
    Nothing is ever re-asked.
@@ -147,8 +153,8 @@ the baseline as the answer sheet:
 The default scan is precision-first and budgeted — the right shape for interactive use
 and PR gates. `--deep` flips the priority to thoroughness:
 
-- **every available lane** is enabled (TypeSafe if `TYPESAFE_API_KEY` is set, NLI if
-  installed, screen + jury if any backend is available — see [lanes.md](lanes.md));
+- **every available lane** is enabled (TypeSafe if `TYPESAFE_API_KEY` is set, the
+  experimental screen + jury if any LLM backend is available — see [lanes.md](lanes.md));
 - the screen runs **per-class sweeps** — ten strong-model passes instead of one, each
   hunting a single conflict class, instead of one pass asked to notice everything;
 - the **jury cap lifts to 1000** pairs (from the default 200).
@@ -196,6 +202,7 @@ update = true
 | `detangle baseline list [ROOT] [--status S]` | List entries; `--status new` is the triage queue. |
 | `detangle baseline set FP STATUS [ROOT] [--note ...]` | Answer a question by fingerprint (or prefix); STATUS is `new`, `open`, `accepted` or `resolved`. |
 | `detangle baseline prune [ROOT]` | Delete entries whose finding has disappeared. |
+| `detangle baseline adopt [ROOT] [--note ...]` | Mark every `new` entry `open`: adopt an existing backlog so `--fail-on-new` fails only on later findings. |
 
 `--baseline`, `--update-baseline`, `--only-new`, `--fail-on-new`, and `--deep` work on
 `detangle diff` as well as `scan`; the `baseline` subcommands take the scan root as an
@@ -237,8 +244,11 @@ jobs:
       - name: Deep scan against the baseline
         env:
           # repository secrets (Settings → Secrets and variables → Actions);
-          # each lane skips gracefully when its key is absent
+          # each lane skips gracefully when its key is absent, and the report's
+          # Notes section says which lane skipped and why. ANTHROPIC_WORKSPACE_ID
+          # is needed only with an organization-level Anthropic key.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         run: |
           status=0
@@ -271,8 +281,15 @@ jobs:
 Notes on the shape:
 
 - `--fail-on-new` makes the job red exactly when there is something for a human to look
-  at — new findings or regressions — and green when the night found nothing new, even if
-  dozens of `open` findings are still pending. The job's color *is* the triage signal.
+  at — new findings or regressions **at or above `fail_on`** — and green when the night
+  found nothing new at that severity, even if dozens of `open` findings are still pending.
+  The job's color *is* the triage signal for the CI-failing tiers; the advisory tier (jury
+  conditional conflicts, fragile exceptions, redundancies — the bulk of what a full
+  LLM cascade adds) still lands in the report and in `baseline list --status new`, so read
+  that list on green mornings too. The first full-cascade night on the demo agent (TypeSafe
+  + `opus` screen + `haiku` jury through the Anthropic API) added 30 new advisory/info
+  entries and left 72 August CLI-jury entries "no longer occurring" — verdict noise across
+  backends; `baseline prune` retires them once you are satisfied they are gone.
 - `--only-new` keeps the Markdown summary down to the actual questions.
 - If your default branch is protected, replace the commit step with a PR-opening action
   (e.g. `peter-evans/create-pull-request`) so the refreshed baseline arrives as a

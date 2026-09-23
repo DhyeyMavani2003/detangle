@@ -253,11 +253,11 @@ def run_jury_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]) ->
             screened = run_screen_lane(cfg, ctx, screen_backend)
             screened_keys = {p.key for p in screened}
 
-    # then: NLI bands if the NLI lane ran, else similarity-ranked unclaimed
-    # candidate pairs (highest lexical similarity first)
-    nli_not_cleared = getattr(ctx, "nli_not_cleared", None)
-    if nli_not_cleared is not None:
-        rest = [p for p, _ in nli_not_cleared]
+    # then: the pairs an earlier lane handed on (TypeSafe's uncertain band),
+    # else similarity-ranked unclaimed candidate pairs (highest lexical
+    # similarity first)
+    if ctx.jury_queue is not None:
+        rest = [p for p, _ in ctx.jury_queue]
     else:
         rest = sorted(
             (

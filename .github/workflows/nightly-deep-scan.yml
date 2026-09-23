@@ -56,13 +56,17 @@ jobs:
         # Repository secrets: TYPESAFE_API_KEY switches the TypeSafe lane on;
         # ANTHROPIC_API_KEY gives the screen and jury an API backend (the demo
         # config leaves backend and model tiers to `auto`, so the key alone is
-        # enough). Without a secret the corresponding lanes skip gracefully and
-        # the run degrades towards the deterministic lane. The exit code is
+        # enough — unless it is an organization-level key, which must also
+        # name a workspace via ANTHROPIC_WORKSPACE_ID; a workspace-scoped key
+        # needs nothing more). Without a secret the corresponding lanes skip
+        # gracefully and the run degrades towards the deterministic lane; the
+        # report's Notes section says which lane skipped and why. The exit code is
         # captured (not raised here) so the report and refreshed baseline still
         # upload; the last step of the job re-exits with it so failures surface
         # as the job's conclusion.
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         run: |
           set +e

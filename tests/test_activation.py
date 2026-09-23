@@ -258,7 +258,22 @@ class TestPrecedence:
         )
         rel = precedence(a, b)
         assert rel.kind == PrecedenceKind.UNDOCUMENTED
-        assert "different config surfaces" in rel.account
+        # no tool reads both files: the account must not talk about a tool
+        # "reading both", which would contradict the co-activation account
+        assert "no tool reads both" in rel.account
+        assert "reading both" not in rel.account
+
+    def test_cross_ecosystem_with_a_shared_reader_is_side_by_side(self) -> None:
+        a = make_unit(path="CLAUDE.md", readers=("claude-code", "copilot"))
+        b = make_unit(
+            path=".github/copilot-instructions.md",
+            ecosystem=Ecosystem.COPILOT,
+            mechanism="copilot-instructions",
+            readers=("copilot",),
+        )
+        rel = precedence(a, b)
+        assert rel.kind == PrecedenceKind.UNDOCUMENTED
+        assert "different config surfaces" in rel.account and "side by side" in rel.account
 
     def test_cross_mechanism_same_ecosystem_undocumented(self) -> None:
         a = make_unit(path="CLAUDE.md", mechanism="memory")

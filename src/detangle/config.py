@@ -25,8 +25,8 @@ class Config:
 
     root: Path = field(default_factory=Path.cwd)
     ecosystems: tuple[str, ...] = ("claude-code", "agents-md", "cursor", "copilot")
-    # Lanes: deterministic is always on; nli/jury are opt-in.
-    lane_nli: bool = False
+    # Lanes: deterministic is always on; typesafe/screen/jury are opt-in
+    # (screen and jury are experimental).
     lane_jury: bool = False
     lane_screen: bool = False  # whole-config LLM sweep; implies the jury
     screen_model: str = ""  # backend-shaped; empty = backend's strong default
@@ -55,7 +55,6 @@ class Config:
     jury_backend: str = "auto"  # auto | anthropic | claude-cli | openai
     jury_base_url: str = ""  # for the openai-compatible backend
     jury_api_key_env: str = "OPENAI_API_KEY"
-    nli_model: str = "cross-encoder/nli-deberta-v3-small"
     cache_dir: Path | None = None
     ignore_globs: tuple[str, ...] = ()  # config files to skip entirely
     respect_gitignore: bool = True
@@ -69,6 +68,9 @@ class Config:
     update_baseline: bool = False  # write the merged baseline back after the scan
     only_new: bool = False  # report only new/regression findings
     fail_on_new: bool = False  # exit non-zero only for new/regression findings
+    # notes about the configuration itself (e.g. a removed option that was
+    # ignored); the scan adds them to the report's notes
+    notes: list[str] = field(default_factory=list)
 
     def severity_for(self, code: str) -> Severity:
         if code in self.severity_overrides:
@@ -140,7 +142,8 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
     lanes = tbl.get("lanes", {})
     if not isinstance(lanes, dict):
         raise bad("'lanes' must be a table")
-    cfg.lane_nli = bool(lanes.get("nli", cfg.lane_nli))
+    if "nli" in lanes:
+        cfg.notes.append(f"{src}: [lanes] nli is ignored — the NLI lane was removed")
     cfg.lane_jury = bool(lanes.get("jury", cfg.lane_jury))
     cfg.lane_screen = bool(lanes.get("screen", cfg.lane_screen))
     cfg.lane_typesafe = bool(lanes.get("typesafe", cfg.lane_typesafe))
@@ -249,8 +252,7 @@ def _apply(cfg: Config, data: dict[str, Any], src: Path) -> Config:
     if isinstance(screen, dict):
         cfg.screen_model = str(screen.get("model", cfg.screen_model))
 
-    nli = tbl.get("nli", {})
-    if isinstance(nli, dict):
-        cfg.nli_model = str(nli.get("model", cfg.nli_model))
+    if "nli" in tbl:
+        cfg.notes.append(f"{src}: [detangle.nli] is ignored — the NLI lane was removed")
 
     return cfg

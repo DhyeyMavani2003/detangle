@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import urllib.request
 from pathlib import Path
 
@@ -11,6 +12,8 @@ import pytest
 
 from detangle.config import Config, ConfigError, load_config
 from detangle.lanes.backends import (
+    ROLE_MAX_TOKENS,
+    AnthropicBackend,
     Backend,
     ClaudeCliBackend,
     JuryError,
@@ -87,6 +90,115 @@ class TestClaudeCliBackend:
 
     def test_ident_carries_backend_and_model(self, monkeypatch):
         assert _cli_backend(monkeypatch).ident == "claude-cli:haiku"
+
+
+# ---------------------------------------------------------------------------
+# anthropic backend (the SDK is faked: both generations of messages.create)
+# ---------------------------------------------------------------------------
+
+
+class _Block:
+    def __init__(self, text: str):
+        self.text = text
+
+
+class _Resp:
+    def __init__(self, text: str):
+        self.content = [_Block(text)]
+
+
+def _fake_anthropic(monkeypatch, *, with_temperature: bool, calls: list[dict]):
+    """Install a stand-in ``anthropic`` module whose ``messages.create`` has
+    (0.x SDK) or lacks (1.x SDK) the ``temperature`` parameter."""
+    import types
+
+    class _Messages:
+        if with_temperature:
+
+            def create(self, *, model, max_tokens, system, messages, temperature=1.0):
+                calls.append(dict(locals()))
+                return _Resp('{"verdict": "DISTINCT"}')
+
+        else:
+
+            def create(self, *, model, max_tokens, system, messages):
+                calls.append(dict(locals()))
+                return _Resp('{"verdict": "DISTINCT"}')
+
+    class _Client:
+        def __init__(self, default_headers=None):
+            self.default_headers = default_headers
+            self.messages = _Messages()
+
+    mod = types.ModuleType("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+
+
+class TestAnthropicBackend:
+    def test_requires_key(self, monkeypatch):
+        _fake_anthropic(monkeypatch, with_temperature=True, calls=[])
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        with pytest.raises(JuryError, match="ANTHROPIC_API_KEY"):
+            AnthropicBackend("claude-haiku-4-5-20251001")
+
+    def test_legacy_sdk_gets_temperature_zero(self, monkeypatch):
+        calls: list[dict] = []
+        _fake_anthropic(monkeypatch, with_temperature=True, calls=calls)
+        b = AnthropicBackend("m1")
+        assert b.complete("SYS", "USR") == '{"verdict": "DISTINCT"}'
+        (call,) = calls
+        assert call["temperature"] == 0
+        assert call["model"] == "m1" and call["system"] == "SYS"
+        assert call["messages"] == [{"role": "user", "content": "USR"}]
+        assert call["max_tokens"] == 500
+
+    def test_current_sdk_has_no_sampling_parameter(self, monkeypatch):
+        """The 1.x SDK dropped ``temperature``; sending it is a TypeError that
+        would fail every jury and screen call (seen on the nightly runner)."""
+        calls: list[dict] = []
+        _fake_anthropic(monkeypatch, with_temperature=False, calls=calls)
+        b = AnthropicBackend("m1")
+        assert b.complete("SYS", "USR") == '{"verdict": "DISTINCT"}'
+        (call,) = calls
+        assert "temperature" not in call
+
+    def test_workspace_id_header_only_when_configured(self, monkeypatch):
+        """An organization-level key must name a workspace per request; the
+        header rides the client, and a workspace-scoped key sends none."""
+        _fake_anthropic(monkeypatch, with_temperature=False, calls=[])
+        monkeypatch.delenv("ANTHROPIC_WORKSPACE_ID", raising=False)
+        assert AnthropicBackend("m1").client.default_headers is None
+        monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "  ")
+        assert AnthropicBackend("m1").client.default_headers is None
+        monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_01abc")
+        assert AnthropicBackend("m1").client.default_headers == {
+            "anthropic-workspace-id": "wrkspc_01abc"
+        }
+
+    def test_sdk_errors_degrade_to_jury_error(self, monkeypatch):
+        _fake_anthropic(monkeypatch, with_temperature=False, calls=[])
+        b = AnthropicBackend("m1")
+
+        def boom(**_kw):
+            raise RuntimeError("model not found")
+
+        b.client.messages.create = boom
+        with pytest.raises(JuryError, match="anthropic backend: RuntimeError: model not found"):
+            b.complete("s", "u")
+
+    def test_screen_role_gets_the_larger_output_budget(self, monkeypatch):
+        calls: list[dict] = []
+        _fake_anthropic(monkeypatch, with_temperature=False, calls=calls)
+        cfg = Config()
+        cfg.jury_backend = "anthropic"
+        screen = make_backend(cfg, role="screen")
+        jury = make_backend(cfg, role="jury")
+        assert screen.model == "claude-opus-5" and jury.model == "claude-haiku-4-5-20251001"
+        screen.complete("s", "u")
+        jury.complete("s", "u")
+        assert calls[0]["max_tokens"] == ROLE_MAX_TOKENS["screen"] > calls[1]["max_tokens"] == 500
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +309,8 @@ class TestMakeBackend:
         cfg.jury_base_url = "http://localhost:11434/v1"
         b = make_backend(cfg)
         assert isinstance(b, OpenAICompatBackend)
+        assert b.max_tokens == 500
+        assert make_backend(cfg, role="screen").max_tokens == ROLE_MAX_TOKENS["screen"]
 
     def test_auto_prefers_cli_when_no_key(self, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

@@ -1,7 +1,8 @@
 # detangle — development guide
 
 detangle is a static conflict linter for AI agent configurations. Pure Python 3.10+,
-`src/` layout, deterministic core with optional NLI/jury lanes.
+`src/` layout, deterministic core with an optional TypeSafe lane and experimental LLM
+screen/jury lanes. Human contributors: see CONTRIBUTING.md.
 
 ## Working here
 
@@ -20,4 +21,7 @@ detangle is a static conflict linter for AI agent configurations. Pure Python 3.
   clash tests
 - `src/detangle/activation.py` — co-activation + precedence model
 - `benchmarks/` — seeded-conflict evaluation harness (`python -m benchmarks.run_eval`)
-- `docs/` — taxonomy, ecosystem semantics, lanes, configuration reference
+- `src/detangle/lanes/` — the optional lanes: `typesafe.py`, and the experimental `screen.py`,
+  `jury.py` and their LLM transports in `backends.py`
+- `docs/` — taxonomy, ecosystem semantics, lanes, benchmark, experiments, configuration
+  reference

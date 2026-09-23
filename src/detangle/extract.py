@@ -3,8 +3,7 @@
 This is the deterministic (zero-LLM) extraction lane. It is deliberately
 conservative: fields it cannot infer stay empty, and downstream detectors
 treat empty as "unknown", never as "matching". The imperative→declarative
-normalization exists because NLI models are trained on declaratives and
-because content-hash identity should survive trivial rephrasing.
+normalization exists so content-hash identity survives trivial rephrasing.
 """
 
 from __future__ import annotations
@@ -417,7 +416,7 @@ def normalize_declarative(text: str, frame: Frame) -> str:
     """Imperative -> declarative with a fixed subject template.
 
     'Never push to main.' -> 'The agent must not push to main.'
-    Used for NLI inputs and for content-hash identity.
+    Used for content-hash identity.
     """
     t = " ".join(text.split()).rstrip(".!").strip()
     t = EMPHASIS_PREFIX_RE.sub("", t)

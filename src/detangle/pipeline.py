@@ -66,14 +66,14 @@ def scan(cfg: Config) -> ScanResult:
     if cfg.deep:
         # thoroughness-first profile: every available lane, per-class screen
         # sweeps, jury cap lifted — built for overnight CI, hours are fine
-        cfg.lane_screen = True
-        cfg.lane_nli = True  # skips gracefully when the extra isn't installed
+        cfg.lane_screen = True  # skips gracefully without an LLM backend
         cfg.lane_typesafe = True  # skips gracefully without an API key
         cfg.jury_max_pairs = max(cfg.jury_max_pairs, 1000)
     if cfg.lane_screen:
         # the screen only nominates; the jury adjudicates its nominations
         cfg.lane_jury = True
     corpus = discover(cfg)
+    corpus.notes.extend(cfg.notes)
     t_discover = time.monotonic()
 
     # the screen and typesafe lanes reason over weak/hedged sentences too
@@ -99,10 +99,6 @@ def scan(cfg: Config) -> ScanResult:
         from .lanes.typesafe import run_typesafe_lane
 
         findings = enabled_findings(ctx, run_typesafe_lane(cfg, ctx, findings))
-    if cfg.lane_nli:
-        from .lanes.nli import run_nli_lane
-
-        findings = enabled_findings(ctx, run_nli_lane(cfg, ctx, findings))
     if cfg.lane_jury:
         from .lanes.jury import run_jury_lane
 

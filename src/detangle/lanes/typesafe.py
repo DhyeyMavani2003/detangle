@@ -37,8 +37,8 @@ to agree there is none (the maximum mass stays below ``uncertain_low``).
 
 Composability: pairs judged confidently are claimed; pairs whose conflict
 mass lands in the uncertain band are handed to the jury lane (when enabled)
-through the same channel the NLI lane uses, so ``--typesafe --jury`` means
-"TypeSafe decides what it can; a generative juror handles the rest".
+through the context's jury queue, so ``--typesafe --jury`` means "TypeSafe
+decides what it can; a generative juror handles the rest".
 
 Findings carry ``lanes: ["typesafe"]``. Verdicts are cached per pair by
 (linter version, model, prompt hash, pair key), so re-scans of unchanged
@@ -601,16 +601,11 @@ def run_typesafe_lane(cfg: Config, ctx: AnalysisContext, findings: list[Finding]
     complete = len(judged) == len(pairs) and not capped
     if complete:
         ctx.lanes_ran.add("typesafe")
-    # the uncertain band goes to the jury (if enabled) through the channel the
-    # NLI lane uses, best-scored first and merged with whatever another lane
-    # already handed on; a confident TypeSafe verdict never reaches the jury.
+    # the uncertain band goes to the jury (if enabled) through the jury queue,
+    # best-scored first; a confident TypeSafe verdict never reaches the jury.
     # An incomplete run hands nothing on: the jury keeps its own ranking.
     if cfg.lane_jury and complete:
-        prev = getattr(ctx, "nli_not_cleared", None) or []
-        have = {p.key for p, _ in prev}
-        ctx.nli_not_cleared = prev + [
-            t for t in sorted(uncertain, key=lambda t: -t[1]) if t[0].key not in have
-        ]
+        ctx.jury_queue = sorted(uncertain, key=lambda t: -t[1])
     ctx.corpus.notes.append(
         f"typesafe lane: judged {len(judged)} of {len(pairs)} pair(s) with {client.ident} in "
         f"{client.calls} call(s), {rejudged} re-judged alone; {emitted} finding(s), "

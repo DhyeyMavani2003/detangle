@@ -23,6 +23,21 @@ _SEV_STYLE = {
 # Console (rich)
 # ---------------------------------------------------------------------------
 
+_LANE_PROBLEM_MARKERS = (
+    "skipped",
+    "unavailable",
+    "incomplete",
+    "aborting",
+    "backend failure",
+    "is ignored",
+)
+
+
+def _is_lane_problem(note: str) -> bool:
+    """Notes saying something was skipped, ignored or incomplete: a lane that
+    was asked for and did not run, an ignored option or file."""
+    return any(m in note for m in _LANE_PROBLEM_MARKERS)
+
 
 def render_console(result: ScanResult, verbose: bool = False) -> None:
     from rich.console import Console
@@ -87,10 +102,15 @@ def render_console(result: ScanResult, verbose: bool = False) -> None:
             console.print(
                 Text(f"  {f.fingerprint} — {sup.reason or 'no justification given'}", style="dim")
             )
-    if result.warnings and verbose:
+    # a lane that was asked for but skipped or failed must be visible without
+    # -v: otherwise `--typesafe` with no key looks like a clean thorough pass
+    shown = result.warnings if verbose else [w for w in result.warnings if _is_lane_problem(w)]
+    if shown:
         console.print("[dim]notes:[/dim]")
-        for w in result.warnings:
+        for w in shown:
             console.print(Text(f"  · {w}", style="dim"))
+        if not verbose and len(shown) < len(result.warnings):
+            console.print("[dim]  (-v shows every note)[/dim]")
 
     counts = result.counts()
     if counts:

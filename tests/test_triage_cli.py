@@ -147,7 +147,7 @@ class TestDeepExpansion:
         cfg.deep = True
         cfg.typesafe_api_key_env = "DETANGLE_TEST_NO_SUCH_KEY"  # never a developer's real key
         result = scan(cfg)  # lanes skip gracefully without backends/models
-        assert cfg.lane_screen and cfg.lane_jury and cfg.lane_nli
+        assert cfg.lane_screen and cfg.lane_jury and cfg.lane_typesafe
         assert cfg.jury_max_pairs >= 1000
         assert result is not None
 
@@ -185,6 +185,52 @@ class TestBaselineCli:
         captured = capsys.readouterr()
         assert "no baseline entries" in captured.out
         assert "no baseline file" in captured.err and "--update-baseline" in captured.err
+
+    def test_gate_without_a_baseline_file_says_so(self, tmp_path: Path, capsys):
+        """--fail-on-new with no baseline file treats the whole backlog as new;
+        the run must say why instead of failing silently."""
+        write_tree(tmp_path, CONFLICT_TREE)
+        assert main(["scan", str(tmp_path), "--baseline", "--fail-on-new"]) == 1
+        err = capsys.readouterr().err
+        assert "no baseline file" in err and "--update-baseline" in err
+
+        # once the baseline exists, the note is gone
+        self._seed(tmp_path)
+        capsys.readouterr()
+        main(["scan", str(tmp_path), "--baseline", "--fail-on-new", "--format", "json"])
+        assert "no baseline file" not in capsys.readouterr().err
+
+    def test_adopt_turns_the_backlog_into_open_entries(self, tmp_path: Path, capsys):
+        """Adopting an existing repo: record, adopt, and the gate passes until a
+        genuinely new finding appears."""
+        bpath = self._seed(tmp_path)
+        data = json.loads(bpath.read_text())
+        data["entries"][0]["note"] = "a human wrote this"
+        bpath.write_text(json.dumps(data))
+        # recorded but unanswered entries still count as new
+        assert main(["scan", str(tmp_path), "--baseline", "--fail-on-new", "--format", "json"]) == 1
+
+        assert main(["baseline", "adopt", str(tmp_path)]) == 0
+        assert "adopted" in capsys.readouterr().out
+        entries = json.loads(bpath.read_text())["entries"]
+        assert all(e["status"] == "open" for e in entries)
+        assert entries[0]["note"] == "a human wrote this"  # never overwritten
+        assert all(e["note"] for e in entries)
+        assert main(["scan", str(tmp_path), "--baseline", "--fail-on-new", "--format", "json"]) == 0
+
+        # idempotent, and a new conflict still fails the gate
+        assert main(["baseline", "adopt", str(tmp_path)]) == 0
+        assert "no new entries" in capsys.readouterr().out
+        write_tree(
+            tmp_path,
+            {
+                ".claude/rules/style.md": (
+                    "Always write commit subjects in the imperative mood.\n"
+                    "Never write commit subjects in the imperative mood.\n"
+                )
+            },
+        )
+        assert main(["scan", str(tmp_path), "--baseline", "--fail-on-new", "--format", "json"]) == 1
 
     def test_list_set_prune_cycle(self, tmp_path: Path, capsys):
         bpath = self._seed(tmp_path)

@@ -1,7 +1,9 @@
 """LLM backends for the jury lane.
 
 The jury protocol is backend-agnostic: a backend is anything that can take
-(system prompt, user prompt) and return raw text at temperature 0. Three
+(system prompt, user prompt) and return raw text, at temperature 0 wherever
+the transport still accepts a sampling parameter (the 1.x Anthropic SDK has
+none; determinism is protocol-engineered, never assumed). Three
 implementations ship, so the jury runs on whatever access you have:
 
 - ``anthropic``   — the Anthropic API (needs ``detangle[jury]`` and
@@ -21,6 +23,7 @@ with a note.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import shutil
@@ -36,11 +39,20 @@ class JuryError(RuntimeError):
     pass
 
 
+# Output budget per lane role. A jury verdict is one small JSON object; a
+# screen sweep returns a nomination ARRAY whose length scales with the config,
+# and a budget that truncates it silently drops nominations (the parser sees
+# an unterminated array and yields nothing), so the screen role gets room.
+DEFAULT_MAX_TOKENS = 500
+ROLE_MAX_TOKENS = {"jury": DEFAULT_MAX_TOKENS, "screen": 4096}
+
+
 class Backend:
     """Base: complete(system, user) -> raw model text."""
 
     name = "base"
     model = ""
+    max_tokens = DEFAULT_MAX_TOKENS
 
     @property
     def ident(self) -> str:
@@ -51,10 +63,19 @@ class Backend:
         raise NotImplementedError
 
 
+def _accepts_temperature(client: object) -> bool:
+    """True when ``client.messages.create`` still has a ``temperature`` parameter."""
+    try:
+        params = inspect.signature(client.messages.create).parameters  # type: ignore[attr-defined]
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return "temperature" in params
+
+
 class AnthropicBackend(Backend):
     name = "anthropic"
 
-    def __init__(self, model: str):
+    def __init__(self, model: str, max_tokens: int = DEFAULT_MAX_TOKENS):
         try:
             import anthropic  # type: ignore[import-not-found]
         except ImportError as e:
@@ -63,22 +84,38 @@ class AnthropicBackend(Backend):
             ) from e
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise JuryError("anthropic backend requires ANTHROPIC_API_KEY in the environment")
-        self.client = anthropic.Anthropic()
+        # An organization-level key (one not created inside a workspace) is
+        # rejected by the API unless the request names a workspace; the
+        # console's workspace id goes in ANTHROPIC_WORKSPACE_ID. A
+        # workspace-scoped key needs nothing.
+        headers = {}
+        workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+        if workspace:
+            headers["anthropic-workspace-id"] = workspace
+        self.client = (
+            anthropic.Anthropic(default_headers=headers) if headers else anthropic.Anthropic()
+        )
         self.model = model
+        self.max_tokens = max_tokens
+        # The 0.x SDK takes ``temperature``; the 1.x SDK (Claude 5 API
+        # generation) dropped every sampling parameter, and passing one is a
+        # TypeError that would fail every call. Send it only where accepted.
+        self._sampling = {"temperature": 0} if _accepts_temperature(self.client) else {}
 
     def complete(self, system: str, user: str) -> str:
         try:
             resp = self.client.messages.create(
                 model=self.model,
-                max_tokens=500,
-                temperature=0,
+                max_tokens=self.max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user}],
+                **self._sampling,
             )
         except Exception as e:
-            # an SDK error (unknown model id, auth, network) must degrade the
-            # lane like any backend failure, not abort the scan with a traceback
-            raise JuryError(f"anthropic backend: {type(e).__name__}: {str(e)[:200]}") from e
+            # an SDK error (unknown model id, auth, network, an unscoped key)
+            # must degrade the lane like any backend failure, not abort the
+            # scan with a traceback; keep enough of the API's message to act on
+            raise JuryError(f"anthropic backend: {type(e).__name__}: {str(e)[:400]}") from e
         return "".join(getattr(b, "text", "") for b in resp.content)
 
 
@@ -149,6 +186,7 @@ class OpenAICompatBackend(Backend):
         base_url: str,
         api_key_env: str = "OPENAI_API_KEY",
         timeout: int = 120,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ):
         if not base_url:
             raise JuryError(
@@ -159,6 +197,7 @@ class OpenAICompatBackend(Backend):
         self.model = model
         self.api_key = os.environ.get(api_key_env, "")
         self.timeout = timeout
+        self.max_tokens = max_tokens
 
     @property
     def ident(self) -> str:
@@ -169,7 +208,7 @@ class OpenAICompatBackend(Backend):
             {
                 "model": self.model,
                 "temperature": 0,
-                "max_tokens": 500,
+                "max_tokens": self.max_tokens,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
@@ -232,12 +271,16 @@ def make_backend(cfg: Config, role: str = "jury") -> Backend:
             return model
         return _DEFAULT_MODELS["jury"][backend_name]
 
+    budget = ROLE_MAX_TOKENS.get(role, DEFAULT_MAX_TOKENS)
+
     if choice == "anthropic":
-        return AnthropicBackend(pick_model("anthropic"))
+        return AnthropicBackend(pick_model("anthropic"), max_tokens=budget)
     if choice == "claude-cli":
         return ClaudeCliBackend(pick_model("claude-cli"))
     if choice == "openai":
-        return OpenAICompatBackend(pick_model("openai"), cfg.jury_base_url, cfg.jury_api_key_env)
+        return OpenAICompatBackend(
+            pick_model("openai"), cfg.jury_base_url, cfg.jury_api_key_env, max_tokens=budget
+        )
     if choice != "auto":
         raise JuryError(
             f"unknown jury backend '{choice}' (expected auto, anthropic, claude-cli, or openai)"
@@ -245,13 +288,15 @@ def make_backend(cfg: Config, role: str = "jury") -> Backend:
 
     if os.environ.get("ANTHROPIC_API_KEY"):
         try:
-            return AnthropicBackend(pick_model("anthropic"))
+            return AnthropicBackend(pick_model("anthropic"), max_tokens=budget)
         except JuryError:
             pass
     if shutil.which("claude"):
         return ClaudeCliBackend(pick_model("claude-cli"))
     if cfg.jury_base_url:
-        return OpenAICompatBackend(pick_model("openai"), cfg.jury_base_url, cfg.jury_api_key_env)
+        return OpenAICompatBackend(
+            pick_model("openai"), cfg.jury_base_url, cfg.jury_api_key_env, max_tokens=budget
+        )
     raise JuryError(
         "no jury backend available: set ANTHROPIC_API_KEY (anthropic), install the "
         "Claude Code CLI (claude-cli), or configure [detangle.jury] base_url (openai)"

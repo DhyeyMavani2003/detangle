@@ -1,324 +1,161 @@
 # detangle
 
-**Merge-conflict detection and CI for English-as-code.**
-
-Your agent's configuration — `CLAUDE.md`, `AGENTS.md`, skills, rules, subagents — is a
-program written in English, edited by many hands, executed by a model. Code gets merge-conflict
-detection, linters, type checkers, and CI. Your agent's English gets none of that.
-
-`detangle` statically analyzes an agent's full natural-language configuration and reports
-**conflicting, contradictory, redundant, shadowed, and precedence-ambiguous instructions** —
-each with evidence spans, a co-activation account, and a precedence account.
+**A linter for AI agent instructions.** detangle reads your `CLAUDE.md`, `AGENTS.md`, skills,
+Cursor rules and Copilot instructions, and reports instructions that contradict each other,
+duplicate each other, or get silently overridden. Each finding shows both sides with file and
+line, explains when the two load together, and suggests a fix.
 
 ```
-┌ DTC03 quantitative-conflict  [error] ─────────────────────────────────────────┐
-│ Numeric constraints disagree: 'at most 3 times' and 'exactly 5 times'         │
-│ cannot both hold (ranges do not intersect).                                   │
-│                                                                               │
-│   CLAUDE.md:6   "Retry flaky tests at most 3 times."                          │
-│   AGENTS.md:4   "Retry flaky tests exactly 5 times."                          │
-│                                                                               │
-│   co-activation: both load at launch under copilot                            │
-│   precedence:    CLAUDE.md and AGENTS.md belong to different config surfaces; │
-│                  any tool reading both provides them side by side with no     │
-│                  documented precedence                                        │
-│   fix:           Pick one limit and delete the other, or scope each to the    │
-│                  situation it belongs to.                                     │
-└───────────────────────────────────────────────────────────────────────────────┘
+╭─ DTC03 quantitative-conflict  [error] ──────────────────────────────────────╮
+│ Numeric constraints disagree: 'at most 3 times' and 'exactly 5 times'       │
+│ cannot both hold (ranges do not intersect).                                 │
+│                                                                             │
+│   CLAUDE.md:3                       "Retry flaky tests at most 3 times."    │
+│   .claude/skills/fix-ci/SKILL.md:8  "Retry flaky tests exactly 5 times      │
+│                                      before marking the build failed."      │
+│                                                                             │
+│   co-activation: one loads at launch; the other is description-triggered    │
+│                  (under claude-code)                                        │
+│   precedence:    cross-mechanism pair (memory vs skill): no ecosystem       │
+│                  documents which one wins                                   │
+│   fix:           Pick one limit and delete the other, or scope each to the  │
+│                  situation it belongs to.                                   │
+╰─────────────────────────────────────────────────────────────────────────────╯
 ```
 
-## Why
+Agents do not resolve these conflicts reliably: Anthropic's docs say that when two rules
+contradict, *"Claude may pick one arbitrarily"*. The cheap place to catch a conflict is before
+the agent runs. [More background](docs/background.md).
 
-The vendors already admit the problem:
+## Quick start
 
-- Anthropic's docs: *"if two rules contradict each other, Claude may pick one arbitrarily."*
-- OpenAI's GPT-5 guide: contradictory instructions cause the model to *"expend reasoning
-  tokens searching for a way to reconcile the contradictions."*
-- In July 2026, Anthropic found conflicting directives in Claude Code's own configuration
-  ("leave documentation as appropriate" vs "DO NOT add comments") and removed over 80% of its
-  system prompt with no measured loss.
+detangle is not on PyPI yet; install it from GitHub:
 
-And the research is unambiguous: models cannot resolve instruction conflicts at runtime
-(best open model ~48% on IHEval; which rule wins is position- and model-dependent), config
-files accrete conflicts structurally (+4.9 instructions per commit touching them), and
-91/100 real AGENTS.md/CLAUDE.md files carry at least one config smell. The place to catch a
-conflict is **lint time**, not inference time.
+```bash
+pip install git+https://github.com/DhyeyMavani2003/detangle
+cd your-project
+detangle scan
+```
+
+The default scan needs no API key, makes no network calls and gives the same result every
+time, so it is safe as a CI gate. Findings come in four severities: `error`, `warning`,
+`advisory` and `info`. By default only an `error` makes the run exit non-zero; set `fail_on`
+to gate on warnings too.
+
+```bash
+detangle explain DTC03              # what a rule means, with a link to its full docs
+detangle diff --base origin/main    # only findings in config files your branch changed
+detangle rules                      # every rule
+```
+
+It understands how each tool loads its files: Claude Code (`CLAUDE.md`, rules, skills,
+subagents, commands), the `AGENTS.md` family (Codex, Zed and others), Cursor rules and GitHub
+Copilot instructions. Instructions that can never be in context together, such as rules
+for disjoint paths, are not reported as conflicts. A clash between files that different
+tools read is still reported, because the agent then behaves differently depending on the
+tool. [How each tool loads files](docs/ecosystems.md).
+
+## Thorough pass: TypeSafe (optional)
+
+The default scan catches conflicts with a clear signal: numbers, formats, permit vs forbid,
+duplicates, overrides, missing files. Conflicts phrased in looser English, like "use pnpm"
+in one file and "install with npm" in another, need a model that judges meaning.
+[TypeSafe](https://typesafe.ai) is a separate hosted service that answers typed questions
+with probabilities; with an account key, `--typesafe` asks it to classify every pair of
+instructions that can load together:
+
+```bash
+export TYPESAFE_API_KEY=...
+detangle scan --typesafe
+```
+
+This sends your instruction text to TypeSafe's API. Answers are cached, so re-scanning an
+unchanged config makes no calls. Without the key the scan still runs and says the TypeSafe
+pass was skipped. Two experimental passes run on any LLM instead, including the Claude Code
+CLI or a local model: a *screen* that reads the whole config and nominates suspicious pairs,
+and a *jury* that judges them. All the passes ("lanes") are described in
+[docs/lanes.md](docs/lanes.md).
+
+## How well it works
+
+On a hand-written benchmark of 30 conflicts and 19 conflict-free look-alikes:
+
+| | found, right kind | found, any kind | false alarms | time |
+|---|---|---|---|---|
+| default scan | 5/30 | 5/30 | 0/19 | ~1 s |
+| + TypeSafe | **27/30** | **27/30** | **0/19** | ~15 s |
+| experimental screen + jury (Claude Opus) | 19/30 | 27/30 | 3/19* | ~10 min |
+
+\* All advisory findings, which never fail CI.
+
+"Right kind" means the finding also names the correct conflict class. Read the TypeSafe row
+with two caveats: the lane was tuned on this same benchmark, and with 30 cases the plausible
+range for 27/30 is 74–97%. The default scan's 5/30 is low because the benchmark was written
+in wording its rules do not know; on the realistic demo config in `examples/demo-agent` it
+finds 9 of 14 planted conflicts. [Every configuration, the statistics, and the demo
+config](docs/benchmark.md).
 
 ## What it checks
 
-24 rules across five classes (see [docs/taxonomy.md](docs/taxonomy.md)):
+22 rules in five classes ([all rules with examples](docs/taxonomy.md)):
 
-| Class | Codes | Examples |
-|---|---|---|
-| **C — Conflicts** | DTC01–08 | "always X" vs "never X" · "≤3 retries" vs "exactly 5" · "JSON only" vs "markdown" · permit vs forbid · "be concise" vs "explain in detail" |
-| **P — Precedence & reachability** | DTP01–06 | shadowed rules · overlapping scopes with no declared winner · cross-layer collisions (skill vs CLAUDE.md) · instructions silently dropped by size budgets (Codex's 32 KiB halt, skill-listing truncation) · different tools reading different files |
-| **R — Redundancy & drift** | DTR01–05 | duplicates · paraphrases drifting apart · a term defined two ways · restating what your linter already enforces · references to files/commands that don't exist |
-| **S — Selection & routing** | DTS01–03 | skills competing for the same trigger words · description ≠ body · name shadowing |
-| **X — Security** | DTX01–02 | invisible Unicode & hidden HTML-comment directives · a lower tier granting what a higher tier forbids |
+| Class | Examples |
+|---|---|
+| **Conflicts** (DTC) | "always X" vs "never X" · "at most 3 retries" vs "exactly 5" · "respond with JSON only" vs "always respond in markdown" · permit vs forbid · "be concise" vs "explain in detail" |
+| **Precedence** (DTP) | a rule that can never take effect · overlapping scopes with no declared winner · a skill contradicting `CLAUDE.md` · text cut off by a size limit · tools reading different files |
+| **Redundancy** (DTR) | duplicates · paraphrases drifting apart · a term defined two ways · references to files that do not exist |
+| **Routing** (DTS) | skills competing for the same trigger · a description its body does not deliver · name shadowing |
+| **Security** (DTX) | invisible Unicode and hidden HTML-comment directives · a lower-priority file granting what a higher-priority one forbids |
 
-What makes the analysis different from a format linter:
-
-- **Co-activation aware.** Two instructions that can never be in context together cannot
-  conflict. detangle models each ecosystem's activation semantics — launch sets, glob-scoped
-  rules, description-triggered skills, isolated subagent contexts — and prunes impossible
-  pairs exactly, before any semantic judgment.
-- **Precedence aware.** "Resolved by a declared hierarchy" is not a conflict; "no declared
-  order" is. detangle encodes each ecosystem's documented precedence (including the polarity
-  flips: Claude Code skills are personal > project, but subagents are project > user) and
-  phrases every finding accordingly.
-- **Witness scenarios.** For conditional conflicts, the finding includes the boundary
-  condition under which both instructions apply and cannot be jointly satisfied.
-- **Deterministic core.** The default mode uses zero LLM calls, zero network, and is fully
-  reproducible — safe for CI and air-gapped repos. Optional NLI, LLM-screen, LLM-jury, and
-  TypeSafe (typed, calibrated pair judgments — the holdout's best recall, 27/30, at zero
-  false positives, in ~20 s) lanes add semantic depth (see [docs/lanes.md](docs/lanes.md)).
-- **Procedural conflicts.** The optional screen lane (`--screen`) has a strong model read the
-  whole config — always-on files *and* the skill bodies that join the context when a skill
-  fires — and nominate order/process conflicts (lint-before-test vs test-before-lint,
-  orchestration order vs a skill's own claims) and cross-layer contradictions for the jury
-  to adjudicate.
-
-## Install
-
-detangle is not yet published to PyPI. Until the first release, install from source:
-
-```bash
-git clone https://github.com/DhyeyMavani2003/detangle
-cd detangle
-pip install .              # deterministic core (no ML dependencies)
-pip install '.[nli]'       # + local NLI cross-encoder lane
-pip install '.[jury]'      # + the anthropic SDK (only for the API jury backend)
-```
-
-The LLM screen and jury run on **whichever backend you have** (`[detangle.jury] backend`, default
-`auto`): the **Claude Code CLI** (`claude -p` — your existing subscription, zero extra
-config or dependencies), the **Anthropic API** (`detangle[jury]` + `ANTHROPIC_API_KEY`),
-or **any OpenAI-compatible endpoint** — OpenAI, DeepSeek, Gemini's compat layer, or a
-fully local Ollama/vLLM server — via stdlib HTTP, no SDK needed. See
-[docs/lanes.md](docs/lanes.md).
-
-### Bring your own API key
-
-The key itself never goes in a detangle file — detangle reads keys from **environment
-variables** only; the config file at most names *which* variable to read.
-
-```bash
-# Anthropic API key — nothing to configure; `auto` detects the key
-pip install 'detangle[jury]'
-export ANTHROPIC_API_KEY=sk-ant-...
-detangle scan --screen
-```
-
-```toml
-# Any other provider with an OpenAI-compatible endpoint — .detangle.toml:
-[detangle.jury]
-backend = "openai"                       # set explicitly (auto prefers key/CLI)
-base_url = "https://api.openai.com/v1"   # or DeepSeek / Gemini-compat / xAI ...
-api_key_env = "OPENAI_API_KEY"           # NAME of the env var holding your key
-model = "gpt-5-mini"
-
-[detangle.screen]
-model = "gpt-5"                          # strong model for the one-call screen
-```
-
-```toml
-# Fully local, no key: point base_url at Ollama/vLLM; if the env var named by
-# api_key_env is unset, no auth header is sent.
-[detangle.jury]
-backend = "openai"
-base_url = "http://localhost:11434/v1"
-model = "qwen3:8b"
-```
-
-`auto`'s detection order is `ANTHROPIC_API_KEY` → `claude` CLI on PATH → configured
-`base_url`. If you have the Claude CLI installed but want a different provider, set
-`backend = "openai"` explicitly.
-
-```bash
-# TypeSafe (typed, calibrated pair judgments — a separate lane, not a jury backend):
-export TYPESAFE_API_KEY=...
-detangle scan --typesafe            # 27/30 holdout recall at 0 false positives (49 small trees in ~20 s;
-                                    # a ~130-unit config takes 3–5 min on a cold cache, re-scans are free)
-detangle scan --typesafe --jury     # TypeSafe decides what it can; the jury gets the rest
-```
-
-In GitHub Actions, store the same key as a repository secret named `TYPESAFE_API_KEY`
-(**Settings → Secrets and variables → Actions → New repository secret**): the nightly deep
-scan and the manual `hybrid-eval` workflow read it, and `--deep` switches the lane on
-whenever the variable is present.
-
-(`pip install git+https://github.com/DhyeyMavani2003/detangle` also works once this code
-is on the default branch.)
-
-Once published to PyPI, this becomes:
-
-```bash
-pip install detangle            # deterministic core (no ML dependencies)
-pip install 'detangle[nli]'     # + local NLI cross-encoder lane
-pip install 'detangle[jury]'    # + the anthropic SDK (API jury backend only)
-```
-
-## Use
-
-```bash
-detangle scan                    # scan the current repo, pretty output
-detangle scan --typesafe         # + calibrated typed pair judgments (TYPESAFE_API_KEY)
-detangle scan --typesafe --jury  # TypeSafe decides what it can; the jury gets its uncertain band
-detangle scan --nli --screen     # LLM cascade: deterministic + NLI + screen + jury
-detangle scan --deep --baseline --update-baseline --only-new
-                                 # overnight: every available lane, refresh the triage
-                                 # baseline, report only what's genuinely new
-detangle scan --baseline --fail-on-new           # CI gate: only NEW conflicts fail
-detangle baseline list --status new              # the morning triage queue (add the scan
-                                                 # root when it is not the cwd, e.g.
-                                                 # `detangle baseline list examples/demo-agent --status new`)
-detangle scan --format sarif -o detangle.sarif   # GitHub code-scanning
-detangle diff --base origin/main # only findings introduced by your changes
-detangle explain DTP02           # what a rule means and how to fix it
-detangle rules                   # list all rules
-```
-
-Exit code is non-zero when findings at or above `fail_on` severity exist (default: `error`),
-so `detangle scan` drops straight into CI.
-
-### GitHub Action
+## Use it in CI
 
 ```yaml
+- uses: actions/checkout@v4
 - uses: DhyeyMavani2003/detangle@main
   with:
     args: scan --format sarif --output detangle.sarif
 - uses: github/codeql-action/upload-sarif@v3
+  if: always()     # detangle exits 1 on an error finding; upload the report anyway
   with:
     sarif_file: detangle.sarif
 ```
 
-(Uploading to code scanning needs `permissions: security-events: write` on the job; this
-repo's own CI uploads the SARIF as an artifact instead.)
+Code-scanning upload needs `permissions: security-events: write` on the job, plus
+`contents: read` and `actions: read` in a private repository.
 
-### Configuration
+On a repo that already has findings, record them once, mark them as the known backlog, and
+gate only on findings that appear later:
 
-`.detangle.toml` at the repo root ([full reference](docs/configuration.md)):
-
-```toml
-[detangle]
-ecosystems = ["claude-code", "agents-md", "cursor", "copilot"]
-fail_on = "error"
-
-[detangle.rules]
-DTR04 = false        # disable a rule
-DTC08 = "info"       # change a severity
+```bash
+detangle scan --baseline --update-baseline    # record today's findings
+detangle baseline adopt                       # mark them all "open"; commit .detangle-baseline.json
+detangle scan --baseline --fail-on-new        # in CI: fails only on findings nobody has seen
 ```
 
-Suppress a single finding where it occurs, with a required justification:
+Answering findings one by one, and nightly thorough scans, are in
+[docs/triage.md](docs/triage.md).
+
+## Configure
+
+An optional `.detangle.toml` sets the failing severity and turns rules off or changes their
+severity ([reference](docs/configuration.md)). To silence one finding where it occurs, give
+a reason:
 
 ```markdown
 <!-- detangle-ignore DTC05: hotfix exception is intentional until Q3 -->
 - Feel free to push directly to main for hotfixes.
 ```
 
-## What it understands
+## Docs
 
-| Surface | Semantics modeled |
-|---|---|
-| **Claude Code** | CLAUDE.md hierarchy (concatenation, `@imports` ≤4 hops, subdir on-demand loading), `.claude/rules` (`paths:` globs), skills (description triggers, 1,536-char listing cap, name shadowing), subagents (isolated contexts, project>user), commands |
-| **AGENTS.md family** | root + nested files, Codex positional override reading, the 32 KiB discovery halt, per-tool reader divergence (Zed reads *one* file; Claude Code reads none) |
-| **Cursor** | `.cursor/rules/*.mdc` four rule types (`alwaysApply`/globs/description/manual), nested subtree scoping, legacy `.cursorrules`, `.md`-in-rules-dir dead files |
-| **Copilot** | `.github/copilot-instructions.md`, `instructions/*.instructions.md` with `applyTo`, everything-co-loads union semantics |
-
-Full details in [docs/ecosystems.md](docs/ecosystems.md).
-
-## Benchmark — honest numbers
-
-`benchmarks/` contains a two-tier evaluation harness, and the two tiers measure different
-things:
-
-```bash
-python -m benchmarks.run_eval
-```
-
-- **Mutation suite (in-distribution):** nine conflict-injection operators over clean config
-  trees, with equivalent-mutant controls. Current: 108/108 pair-granular detection,
-  0/24 control false positives. This measures **self-consistency** — the injections are
-  phrased in vocabulary the deterministic lane understands — not generalization.
-- **Holdout (novel phrasings):** 30 hand-authored conflicts in realistic, hedged,
-  colloquial wording written *without* consulting detangle's lexicons (including 4
-  procedural/skill-ordering cases), plus 19 benign-but-tricky control trees. Strict = an
-  expected-code finding touches every involved file; lenient = right pair, adjacent
-  conflict class. LLM rows measured 2026-08-31 live via `claude -p`; the TypeSafe row measured
-  2026-09-17 against the TypeSafe API (`python -m benchmarks.run_eval --holdout --lanes typesafe`
-  with `TYPESAFE_API_KEY` set, or the `hybrid-eval` workflow with `lanes: typesafe`, which
-  reproduced it on a GitHub runner in 8 s):
-
-  | configuration | strict recall | class-lenient | holdout FPs |
-  |---|---|---|---|
-  | deterministic only (default) | 5/30 (17%) | 5/30 (17%) | **0/19 (0%)** |
-  | + NLI auto-clear (no jury) | 5/30 (17%) | 5/30 (17%) | 0/19 |
-  | NLI + jury (`haiku`) | 8/30 (27%) | 10/30 (33%) | 1/19* |
-  | NLI + jury (`sonnet`) | 7/30 (23%) | 11/30 (37%) | 2/19* |
-  | NLI + screen (`opus`) + jury (`sonnet`) | 17/30 (57%) | **27/30 (90%)** | 4/19* |
-  | NLI + screen (`opus`) + jury (`opus`) | 20/30 (67%) | **27/30 (90%)** | 2/19* |
-  | TypeSafe lane (typed pair judgments, ~20 s total) | **27/30 (90%)** | 27/30 (90%) | **0/19 (0%)** |
-
-  \* every measured false positive, in every configuration, is a jury
-  CONDITIONAL_CONFLICT — the model's "maybe" bucket — so those findings land at
-  **advisory** severity and never fail CI; the CI-failing severities stayed FP-free
-  across all benign runs.
-
-That table is the honest shape of the multiplex, and it matches the research it was built
-from: the deterministic core catches the crisp classes (numerics, duplicates, matched-frame
-contradictions, structural/precedence/budget issues) at zero false-positive cost; a
-pair-level jury alone plateaus at ~a third of conflicts *regardless of juror strength*,
-because the bottleneck is candidate formation, not adjudication; the **screen lane**
-attacks exactly that — a strong model nominating pairs from the whole config — which is
-what breaks the ceiling (the screen configurations were the first to catch the procedural
-skill-ordering conflicts — 4/4 strict with the `opus` jury — and the TypeSafe lane now catches
-the same 4/4 from pair questions alone). Adversarially-verified false-positive shapes
-from real repos (target-vs-trigger numeric bands, do-X-instead refinements, purpose
-clauses) are encoded as permanent precision gates and regression tests.
-
-## Nightly triage: thorough scans, human answers, zero re-asking
-
-The benchmark table has a corollary: the configurations that find the most conflicts are
-the ones you cannot run on every commit. detangle's answer is a split schedule with
-memory — a checked-in `.detangle-baseline.json` that records every finding ever seen and
-every human verdict ever given:
-
-- **Overnight**, CI runs `detangle scan --deep --baseline --update-baseline` — every
-  available lane (the TypeSafe lane when the `TYPESAFE_API_KEY` secret is set, the screen
-  and jury when an LLM backend is), ten per-class screen sweeps instead of one, jury cap
-  lifted to 1000. Hours are fine; nobody is waiting — though with TypeSafe alone the demo
-  agent's 2,665 candidate pairs are judged in three to five minutes on a cold cache.
-- **In the morning**, `detangle baseline list <scan-root> --status new` (for this repo:
-  `detangle baseline list examples/demo-agent --status new`) is a short list of questions.
-  Answer each with `detangle baseline set <fingerprint> accepted|open|resolved <scan-root>
-  --note "..."` — or edit the JSON by hand; it is built to be hand-edited and reviewed in PRs.
-- **Answers are remembered forever.** Findings are identified by content-addressed
-  fingerprints that survive line moves, plus a code-independent pair key so a verdict
-  survives an LLM lane re-classifying the same pair. `accepted` suppresses a finding
-  permanently; a `resolved` finding that reappears is flagged as a **regression**.
-- **Only new conflicts surface.** A config with 40 known findings and 1 new one reports
-  exactly 1 item — and `detangle scan --baseline --fail-on-new` is the seconds-scale,
-  deterministic PR gate that fails only on new findings and regressions, never on the
-  known-but-open backlog.
-
-`examples/demo-agent` is the realistic showcase config, and
-`.github/workflows/nightly-deep-scan.yml` runs the thorough pass against it nightly: the
-job goes red when there is something new, the only-new report lands in the step summary,
-and the refreshed baseline is uploaded as the `deep-scan-report` artifact. It is committed
-back only when the workflow is dispatched by hand with `commit_baseline: true` (or you
-download the artifact and commit it) — then the morning `baseline list` shows the new
-entries on a checkout. File format, statuses, and CI recipes:
-[docs/triage.md](docs/triage.md).
-
-## Roadmap
-
-- **Formal lane**: clingo/ASP + Z3 encodings for the formalizable subset (quantitative limits,
-  permissions with scopes, ordering) with unsat-core witnesses — "proof modulo translation."
-- **Jury ensembles**: 3 disjoint-family jurors with escalation, per the jury protocol in
-  [docs/lanes.md](docs/lanes.md).
-- **Precedence manifest**: declare intended resolution order (`overrides:` front-matter);
-  detangle checks against it instead of flagging ambiguity.
-- **PR semantic diff**: "this change makes rule R newly shadowed; widens what the agent may do."
+- [lanes.md](docs/lanes.md): the deterministic, TypeSafe and experimental LLM lanes
+- [benchmark.md](docs/benchmark.md): every measured number and how far to trust it
+- [taxonomy.md](docs/taxonomy.md): every rule, with examples and fixes
+- [ecosystems.md](docs/ecosystems.md): how each tool loads and prioritizes its files
+- [configuration.md](docs/configuration.md): config keys, CLI flags, environment variables
+- [triage.md](docs/triage.md): baselines, nightly scans, CI recipes
+- [experiments.md](docs/experiments.md): design history and ideas to measure next
+- [CONTRIBUTING.md](CONTRIBUTING.md): development setup and architecture
 
 ## License
 

@@ -17,7 +17,7 @@ from pathlib import Path
 from . import __version__
 from .config import ConfigError, load_config
 from .pipeline import ScanResult, scan
-from .taxonomy import RULES, Severity
+from .taxonomy import RESERVED_CODES, RULES, Severity
 
 # bare `--baseline` must mean "the configured default", not clobber a path
 # set in [detangle.baseline] — so the const is a sentinel, resolved after
@@ -35,9 +35,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="detangle",
         description=(
-            "Merge-conflict detection for English-as-code: finds conflicting, "
-            "contradictory, redundant, shadowed, and precedence-ambiguous "
-            "instructions across your agent configuration."
+            "A linter for AI agent instructions: finds contradictory, redundant, "
+            "shadowed, and precedence-ambiguous instructions across CLAUDE.md, "
+            "AGENTS.md, skills, Cursor rules, and Copilot instructions."
         ),
     )
     p.add_argument("--version", action="version", version=f"detangle {__version__}")
@@ -59,25 +59,31 @@ def _build_parser() -> argparse.ArgumentParser:
             default=None,
             help="exit non-zero at or above this severity (default: error)",
         )
-        sp.add_argument("--nli", action="store_true", help="enable the NLI lane")
-        sp.add_argument("--jury", action="store_true", help="enable the LLM jury lane")
-        sp.add_argument(
-            "--screen",
-            action="store_true",
-            help="enable the whole-config LLM screen sweep (implies --jury; strongest model)",
-        )
         sp.add_argument(
             "--typesafe",
             action="store_true",
-            help="enable the TypeSafe lane: calibrated pairwise conflict judgments "
-            "(needs TYPESAFE_API_KEY)",
+            help="add the TypeSafe lane: calibrated pairwise conflict judgments from "
+            "a hosted API (needs TYPESAFE_API_KEY; sends instruction text to TypeSafe)",
+        )
+        sp.add_argument(
+            "--jury",
+            action="store_true",
+            help="experimental: adjudicate candidate pairs with an LLM jury",
+        )
+        sp.add_argument(
+            "--screen",
+            action="store_true",
+            help="experimental: whole-config LLM sweep that nominates pairs for the "
+            "jury (implies --jury; strongest model)",
         )
         sp.add_argument(
             "--deep",
             action="store_true",
-            help="thoroughness-first pass: every available lane, per-class screen "
-            "sweeps, jury cap lifted — built for overnight CI (hours are fine)",
+            help="thoroughness-first pass for overnight CI: every lane that has a "
+            "key or backend, per-class screen sweeps, jury cap lifted",
         )
+        # removed lane: still parsed so old CI scripts keep working, but ignored
+        sp.add_argument("--nli", action="store_true", help=argparse.SUPPRESS)
         sp.add_argument(
             "--baseline",
             nargs="?",
@@ -162,6 +168,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "prune", help="delete entries whose finding no longer occurs (missing_since set)"
     )
     add_baseline_args(bl_prune)
+
+    bl_adopt = bl_sub.add_parser(
+        "adopt",
+        help="mark every 'new' entry 'open': adopt an existing backlog so a "
+        "--fail-on-new gate fails only on findings that appear later",
+    )
+    bl_adopt.add_argument(
+        "--note", default=None, help="note for adopted entries (default: dated backlog note)"
+    )
+    add_baseline_args(bl_adopt)
     return p
 
 
@@ -182,7 +198,7 @@ def _run_baseline(args: argparse.Namespace) -> int:
         )
     for w in bl.warnings:
         print(f"warning: {w}", file=sys.stderr)
-    if bl.corrupt and args.baseline_command in ("set", "prune"):
+    if bl.corrupt and args.baseline_command in ("set", "prune", "adopt"):
         print(
             "error: refusing to modify an unreadable baseline — fix or restore "
             f"{bpath} first (its verdicts would be destroyed by a rewrite)",
@@ -240,6 +256,27 @@ def _run_baseline(args: argparse.Namespace) -> int:
         )
         return 0
 
+    if args.baseline_command == "adopt":
+        from .baseline import today
+
+        adopted = [e for e in bl.entries.values() if e.status == "new"]
+        if not adopted:
+            print("no new entries to adopt")
+            return 0
+        note = args.note if args.note is not None else f"existing backlog, adopted {today()}"
+        for e in adopted:
+            e.status = "open"
+            if not e.note:  # never overwrite a note a human already wrote
+                e.note = note
+        if not _save_or_report(bl, bpath):
+            return 2
+        n = len(adopted)
+        print(
+            f"adopted {n} new entr{'y' if n == 1 else 'ies'} as open; commit the baseline, and "
+            "`--fail-on-new` will fail only on findings that appear after this"
+        )
+        return 0
+
     if args.baseline_command == "prune":
         removed = prune_baseline(bl)
         if not _save_or_report(bl, bpath):
@@ -274,7 +311,7 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
         print(f"error: cannot read config: {e}", file=sys.stderr)
         raise SystemExit(2) from None
     if args.nli:
-        cfg.lane_nli = True
+        cfg.notes.append("--nli is ignored — the NLI lane was removed")
     if args.jury:
         cfg.lane_jury = True
     if args.screen:
@@ -313,6 +350,20 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
         if cfg.baseline_path is None:
             print("error: --fail-on-new requires --baseline", file=sys.stderr)
             raise SystemExit(2)
+    if (cfg.fail_on_new or cfg.only_new) and cfg.baseline_path is not None:
+        bfile = cfg.baseline_path
+        if not bfile.is_absolute():
+            bfile = cfg.root / bfile
+        if not bfile.exists():
+            # without a baseline every finding is "new": a gate adopted on an
+            # existing repo would fail on the whole backlog with no hint why
+            print(
+                f"note: no baseline file at {bfile} — every finding counts as new. "
+                f"Record the backlog once with `detangle scan {args.path} --baseline "
+                f"--update-baseline` and `detangle baseline adopt {args.path}`, then commit "
+                "the file.",
+                file=sys.stderr,
+            )
     if args.no_soft:
         cfg.include_soft = False
     if args.fail_on:
@@ -405,7 +456,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "rules":
         for code, r in sorted(RULES.items()):
-            print(f"{code}  {r.name:28s} [{r.default_severity.label:8s}] {r.summary}")
+            reserved = "  (reserved: not detected yet)" if code in RESERVED_CODES else ""
+            print(f"{code}  {r.name:28s} [{r.default_severity.label:8s}] {r.summary}{reserved}")
         return 0
 
     if args.command == "baseline":
@@ -420,6 +472,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{r.code} — {r.name} (default severity: {r.default_severity.label})")
         print()
         print(r.summary)
+        if r.code in RESERVED_CODES:
+            print()
+            print("Reserved: no shipped detector or lane emits this code yet.")
         print()
         print(
             "Docs: https://github.com/DhyeyMavani2003/detangle/blob/main/docs/taxonomy.md"

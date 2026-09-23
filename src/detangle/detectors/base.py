@@ -23,9 +23,14 @@ class AnalysisContext:
     # baseline's missing-stamp logic must not treat a finding as gone when
     # the lane that produced it was skipped or aborted
     lanes_ran: set[str] = field(default_factory=lambda: {"deterministic"})
-    # pair keys a calibrated lane judged compatible with confidence; the NLI
-    # filter skips them so the jury never re-adjudicates a cleared pair
+    # pair keys a calibrated lane judged compatible with confidence; the jury
+    # never re-adjudicates a cleared pair
     cleared: set[str] = field(default_factory=set)
+    # pairs an earlier lane handed to the jury, each with that lane's score,
+    # best first. None means no lane handed anything on and the jury ranks
+    # the unclaimed candidate pairs itself; an empty list means a lane ran
+    # and left nothing uncertain.
+    jury_queue: list[tuple[UnitPair, float]] | None = None
 
     def claim(self, pair: UnitPair) -> None:
         self.claimed.add(pair.key)

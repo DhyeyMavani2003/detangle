@@ -163,7 +163,7 @@ class TestDegradedRuns:
         f_jury = _pair_finding("DTC01", u1, u2, "jury found this")
         b = Baseline()
         apply_baseline([f_jury], b, D)
-        out = apply_baseline([], b, D, ran_lanes={"deterministic", "nli", "jury", "screen"})
+        out = apply_baseline([], b, D, ran_lanes={"deterministic", "typesafe", "jury", "screen"})
         assert out.counts["missing"] == 1
         assert b.entries[f_jury.fingerprint].missing_since == D
 
