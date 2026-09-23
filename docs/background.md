@@ -34,8 +34,8 @@ smell. The cheap place to catch a conflict is lint time, not inference time.
   are project over user), and phrases every finding accordingly.
 - **Witness scenarios.** For conditional conflicts, the finding states the situation in which
   both instructions apply and cannot both be followed.
-- **Deterministic core.** The default mode makes zero LLM calls and zero network calls and is
-  reproducible byte for byte, so it is safe for CI and air-gapped repos. The optional lanes
+- **Deterministic core.** The default mode makes zero LLM calls and zero network calls and
+  produces the same findings on every run, so it is safe for CI and air-gapped repos. The optional lanes
   add semantic judgment on top ([lanes.md](lanes.md)).
 
 ## Roadmap

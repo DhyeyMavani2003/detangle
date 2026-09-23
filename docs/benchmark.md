@@ -88,8 +88,9 @@ duplicate; the deterministic lane has rules for both classes but misses these ph
 
 ## Demo agent
 
-`examples/demo-agent` is a realistic 134-unit config for a fictional TypeScript SaaS, with
-14 planted conflicts and 4 benign traps ([EXPECTED.md](../examples/demo-agent/EXPECTED.md)).
+`examples/demo-agent` is a realistic config for a fictional TypeScript SaaS: 12 files and
+134 instruction units when the lanes' high-recall extraction runs (a plain scan keeps the 77
+clear directives), with 14 planted conflicts and 4 benign traps ([EXPECTED.md](../examples/demo-agent/EXPECTED.md)).
 Its committed triage baseline records a verdict for every finding.
 
 | lane | planted conflicts found | notes |

@@ -303,7 +303,7 @@ Full scan of `path` (default: `.`).
 | `--baseline [PATH]` | Use a baseline file for triage. Given without a value, means `.detangle-baseline.json` at the scan root (or `[detangle.baseline] path`). |
 | `--update-baseline` | Write the post-scan state back to the baseline: unseen findings recorded as `new`, disappeared ones stamped `missing_since`, prior verdicts kept. |
 | `--only-new` | Report only findings the baseline does not already answer: `new` entries and regressions. |
-| `--fail-on-new` | Exit non-zero **only** for `new`/regression findings at or above `fail_on` — known-but-`open` findings never block the build. The CI-gate companion to `--baseline`. With no baseline file yet, every finding counts as new: create and commit the file first with `--update-baseline` (the run prints a note when the file is missing). |
+| `--fail-on-new` | Exit non-zero **only** for `new`/regression findings at or above `fail_on` — known-but-`open` findings never block the build. The CI-gate companion to `--baseline`. With no baseline file yet, or with entries nobody has answered, every finding counts as new: record the backlog with `--update-baseline`, mark it with `detangle baseline adopt`, and commit the file (the run prints a note when the file is missing). |
 | `--no-soft` | Hide advisory/info findings (sets `include_soft = false`) |
 | `--select CODES` | Comma-separated rule codes to run **exclusively** (e.g. `DTC01,DTC03`). Unknown codes exit 2. Replaces any `[detangle.rules]` disables for the run. |
 | `-v`, `--verbose` | More detail in console output |
@@ -321,18 +321,19 @@ Runs a full scan, then reports only findings that involve config files changed v
 printed and *all* findings are reported). Use it in PR CI to gate only on newly introduced
 tangles.
 
-### `detangle baseline list|set|prune [path]`
+### `detangle baseline list|set|prune|adopt [path]`
 
 Manage the triage baseline without opening the JSON (editing the file directly is equally
-supported — it is designed to be hand-edited and reviewed in PRs). All three take the scan
-root as an optional positional `path` (default `.`) and `--baseline FILE` to override the
-baseline location. Statuses and workflow: [triage.md](triage.md).
+supported — it is designed to be hand-edited and reviewed in PRs). All of them take the
+scan root as an optional positional `path` (default `.`) and `--baseline FILE` to override
+the baseline location. Statuses and workflow: [triage.md](triage.md).
 
 | Subcommand | Meaning |
 |---|---|
 | `list [--status S]` | List baseline entries, optionally filtered by status (`new`/`open`/`accepted`/`resolved`). `--status new` is the morning triage queue. |
 | `set FP STATUS [ROOT] [--note ...]` | Set an entry's status (`new`/`open`/`accepted`/`resolved`) by fingerprint or any unique prefix, optionally recording a justification note. Every `baseline` subcommand takes the scan root as its last positional argument (default: the current directory). |
 | `prune` | Delete entries whose finding has disappeared (`missing_since` set); everything else is kept. |
+| `adopt [--note ...]` | Mark every `new` entry `open` in one go, keeping notes already written (default note: a dated "existing backlog"). The first step when adopting a `--fail-on-new` gate on a repo that already has findings. |
 
 ### `detangle explain CODE`
 

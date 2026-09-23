@@ -136,6 +136,12 @@ the baseline as the answer sheet:
    Or edit `.detangle-baseline.json` directly and commit it — the file is meant to be
    hand-edited, and the PR review of a baseline change *is* the triage record.
 
+   **Adopting detangle on a repo that already has findings?** Answering dozens of them one
+   by one is not the first step. `detangle baseline adopt` marks every `new` entry `open`
+   (known backlog, not blocking) in one go, keeping any note already written, so a
+   `--fail-on-new` gate starts green and fails only on findings that appear later. Work
+   through the backlog at your own pace with `baseline list --status open`.
+
 4. **The next run pre-fills every prior answer.** With `--only-new`, the report contains
    only what the baseline could not answer: genuinely new findings and regressions.
    Nothing is ever re-asked.
@@ -196,6 +202,7 @@ update = true
 | `detangle baseline list [ROOT] [--status S]` | List entries; `--status new` is the triage queue. |
 | `detangle baseline set FP STATUS [ROOT] [--note ...]` | Answer a question by fingerprint (or prefix); STATUS is `new`, `open`, `accepted` or `resolved`. |
 | `detangle baseline prune [ROOT]` | Delete entries whose finding has disappeared. |
+| `detangle baseline adopt [ROOT] [--note ...]` | Mark every `new` entry `open`: adopt an existing backlog so `--fail-on-new` fails only on later findings. |
 
 `--baseline`, `--update-baseline`, `--only-new`, `--fail-on-new`, and `--deep` work on
 `detangle diff` as well as `scan`; the `baseline` subcommands take the scan root as an

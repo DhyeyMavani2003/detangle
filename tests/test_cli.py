@@ -310,3 +310,23 @@ def test_removed_nli_flag_is_accepted_and_reported(tmp_path: Path) -> None:
     assert main(["scan", str(tmp_path), "--nli", "--format", "json", "-o", str(out)]) == 0
     report = json.loads(out.read_text())
     assert any("--nli is ignored" in w for w in report["warnings"])
+
+
+def test_rules_and_explain_mark_reserved_codes(capsys) -> None:
+    assert main(["rules"]) == 0
+    lines = {ln.split()[0]: ln for ln in capsys.readouterr().out.splitlines() if ln.strip()}
+    assert "reserved" in lines["DTC06"] and "reserved" in lines["DTC07"]
+    assert "reserved" not in lines["DTC01"]
+    assert main(["explain", "DTC07"]) == 0
+    assert "Reserved" in capsys.readouterr().out
+    assert main(["explain", "DTC03"]) == 0
+    assert "Reserved" not in capsys.readouterr().out
+
+
+def test_skipped_lane_note_shows_without_verbose(tmp_path: Path, monkeypatch, capsys) -> None:
+    """`--typesafe` with no key must not look like a clean thorough pass."""
+    make_clean_tree(tmp_path)
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    assert main(["scan", str(tmp_path), "--typesafe"]) == 0
+    out = capsys.readouterr().out
+    assert "lane skipped" in out and "TYPESAFE_API_KEY" in out

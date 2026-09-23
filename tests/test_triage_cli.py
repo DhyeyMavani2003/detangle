@@ -200,6 +200,38 @@ class TestBaselineCli:
         main(["scan", str(tmp_path), "--baseline", "--fail-on-new", "--format", "json"])
         assert "no baseline file" not in capsys.readouterr().err
 
+    def test_adopt_turns_the_backlog_into_open_entries(self, tmp_path: Path, capsys):
+        """Adopting an existing repo: record, adopt, and the gate passes until a
+        genuinely new finding appears."""
+        bpath = self._seed(tmp_path)
+        data = json.loads(bpath.read_text())
+        data["entries"][0]["note"] = "a human wrote this"
+        bpath.write_text(json.dumps(data))
+        # recorded but unanswered entries still count as new
+        assert main(["scan", str(tmp_path), "--baseline", "--fail-on-new", "--format", "json"]) == 1
+
+        assert main(["baseline", "adopt", str(tmp_path)]) == 0
+        assert "adopted" in capsys.readouterr().out
+        entries = json.loads(bpath.read_text())["entries"]
+        assert all(e["status"] == "open" for e in entries)
+        assert entries[0]["note"] == "a human wrote this"  # never overwritten
+        assert all(e["note"] for e in entries)
+        assert main(["scan", str(tmp_path), "--baseline", "--fail-on-new", "--format", "json"]) == 0
+
+        # idempotent, and a new conflict still fails the gate
+        assert main(["baseline", "adopt", str(tmp_path)]) == 0
+        assert "no new entries" in capsys.readouterr().out
+        write_tree(
+            tmp_path,
+            {
+                ".claude/rules/style.md": (
+                    "Always write commit subjects in the imperative mood.\n"
+                    "Never write commit subjects in the imperative mood.\n"
+                )
+            },
+        )
+        assert main(["scan", str(tmp_path), "--baseline", "--fail-on-new", "--format", "json"]) == 1
+
     def test_list_set_prune_cycle(self, tmp_path: Path, capsys):
         bpath = self._seed(tmp_path)
         assert main(["baseline", "list", str(tmp_path), "--status", "new"]) == 0

@@ -239,6 +239,10 @@ _RULES: list[Rule] = [
 
 RULES: dict[str, Rule] = {r.code: r for r in _RULES}
 
+# codes in the taxonomy that no shipped detector or lane emits yet (they wait
+# on the planned formal lane); listed so users are not promised them
+RESERVED_CODES: frozenset[str] = frozenset({"DTC06", "DTC07"})
+
 
 def rule(code: str) -> Rule:
     return RULES[code]

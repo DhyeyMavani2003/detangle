@@ -17,7 +17,7 @@ from pathlib import Path
 from . import __version__
 from .config import ConfigError, load_config
 from .pipeline import ScanResult, scan
-from .taxonomy import RULES, Severity
+from .taxonomy import RESERVED_CODES, RULES, Severity
 
 # bare `--baseline` must mean "the configured default", not clobber a path
 # set in [detangle.baseline] — so the const is a sentinel, resolved after
@@ -168,6 +168,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "prune", help="delete entries whose finding no longer occurs (missing_since set)"
     )
     add_baseline_args(bl_prune)
+
+    bl_adopt = bl_sub.add_parser(
+        "adopt",
+        help="mark every 'new' entry 'open': adopt an existing backlog so a "
+        "--fail-on-new gate fails only on findings that appear later",
+    )
+    bl_adopt.add_argument(
+        "--note", default=None, help="note for adopted entries (default: dated backlog note)"
+    )
+    add_baseline_args(bl_adopt)
     return p
 
 
@@ -188,7 +198,7 @@ def _run_baseline(args: argparse.Namespace) -> int:
         )
     for w in bl.warnings:
         print(f"warning: {w}", file=sys.stderr)
-    if bl.corrupt and args.baseline_command in ("set", "prune"):
+    if bl.corrupt and args.baseline_command in ("set", "prune", "adopt"):
         print(
             "error: refusing to modify an unreadable baseline — fix or restore "
             f"{bpath} first (its verdicts would be destroyed by a rewrite)",
@@ -243,6 +253,27 @@ def _run_baseline(args: argparse.Namespace) -> int:
         print(
             f"{_plain(entry.fingerprint)} -> {args.status}"
             + (f" ({_plain(entry.note)})" if entry.note else "")
+        )
+        return 0
+
+    if args.baseline_command == "adopt":
+        from .baseline import today
+
+        adopted = [e for e in bl.entries.values() if e.status == "new"]
+        if not adopted:
+            print("no new entries to adopt")
+            return 0
+        note = args.note if args.note is not None else f"existing backlog, adopted {today()}"
+        for e in adopted:
+            e.status = "open"
+            if not e.note:  # never overwrite a note a human already wrote
+                e.note = note
+        if not _save_or_report(bl, bpath):
+            return 2
+        n = len(adopted)
+        print(
+            f"adopted {n} new entr{'y' if n == 1 else 'ies'} as open; commit the baseline, and "
+            "`--fail-on-new` will fail only on findings that appear after this"
         )
         return 0
 
@@ -328,8 +359,9 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
             # existing repo would fail on the whole backlog with no hint why
             print(
                 f"note: no baseline file at {bfile} — every finding counts as new. "
-                f"Create it once with `detangle scan {args.path} --baseline "
-                "--update-baseline`, then commit it.",
+                f"Record the backlog once with `detangle scan {args.path} --baseline "
+                f"--update-baseline` and `detangle baseline adopt {args.path}`, then commit "
+                "the file.",
                 file=sys.stderr,
             )
     if args.no_soft:
@@ -424,7 +456,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "rules":
         for code, r in sorted(RULES.items()):
-            print(f"{code}  {r.name:28s} [{r.default_severity.label:8s}] {r.summary}")
+            reserved = "  (reserved: not detected yet)" if code in RESERVED_CODES else ""
+            print(f"{code}  {r.name:28s} [{r.default_severity.label:8s}] {r.summary}{reserved}")
         return 0
 
     if args.command == "baseline":
@@ -439,6 +472,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{r.code} — {r.name} (default severity: {r.default_severity.label})")
         print()
         print(r.summary)
+        if r.code in RESERVED_CODES:
+            print()
+            print("Reserved: no shipped detector or lane emits this code yet.")
         print()
         print(
             "Docs: https://github.com/DhyeyMavani2003/detangle/blob/main/docs/taxonomy.md"
