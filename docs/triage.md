@@ -147,8 +147,8 @@ the baseline as the answer sheet:
 The default scan is precision-first and budgeted — the right shape for interactive use
 and PR gates. `--deep` flips the priority to thoroughness:
 
-- **every available lane** is enabled (TypeSafe if `TYPESAFE_API_KEY` is set, NLI if
-  installed, screen + jury if any backend is available — see [lanes.md](lanes.md));
+- **every available lane** is enabled (TypeSafe if `TYPESAFE_API_KEY` is set, the
+  experimental screen + jury if any LLM backend is available — see [lanes.md](lanes.md));
 - the screen runs **per-class sweeps** — ten strong-model passes instead of one, each
   hunting a single conflict class, instead of one pass asked to notice everything;
 - the **jury cap lifts to 1000** pairs (from the default 200).

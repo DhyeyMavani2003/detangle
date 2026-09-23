@@ -183,6 +183,17 @@ def precedence(a: InstructionUnit, b: InstructionUnit) -> PrecedenceRelation:
         )
 
     if fa.ecosystem != fb.ecosystem:
+        if not (_readers(a) & _readers(b)):
+            # the co-activation account already says no tool reads both; a
+            # precedence account about "any tool reading both" would contradict it
+            return PrecedenceRelation(
+                PrecedenceKind.UNDOCUMENTED,
+                account=(
+                    f"no tool reads both {fa.path} and {fb.path}, so nothing arbitrates "
+                    "between them: each tool follows the file it reads, and the agent "
+                    "behaves differently depending on the tool"
+                ),
+            )
         return PrecedenceRelation(
             PrecedenceKind.UNDOCUMENTED,
             account=(

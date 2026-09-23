@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       lanes:
-        description: "Comma-separated lanes (any of: nli,jury,screen,typesafe)"
+        description: "Comma-separated lanes (any of: typesafe,jury,screen)"
         default: "typesafe"
         type: string
       jury_model:
@@ -46,9 +46,6 @@ jobs:
           python-version: "3.12"
       - name: Install (deterministic + jury)
         run: pip install -e ".[jury]"
-      - name: Install NLI extra
-        if: contains(inputs.lanes, 'nli')
-        run: pip install -e ".[nli]"
       - name: Run holdout
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

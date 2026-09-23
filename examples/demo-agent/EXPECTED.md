@@ -35,8 +35,9 @@ report **zero** findings on the benign traps below. C1–C4 (order and mood
 conflicts) and C14 (semantic import-order clash) need a semantic lane: their
 sentences share no frame, antonym, or numeric handle a precision-first
 deterministic rule may fire on. The TypeSafe lane (`--typesafe`) catches C1,
-C3, C4 and C14; C2 — an order carried by list position across three lines —
-needs the whole-config screen + jury cascade (`--screen`).
+C3, C4 and C14. C2 is caught by the experimental screen + jury cascade
+(`--screen`), on the single sentence pair "it lints first" (CLAUDE.md) vs "Run
+`pnpm lint` last" (the pre-commit skill); TypeSafe scores that pair low.
 
 ## Benign traps (must produce NO findings)
 

@@ -40,10 +40,9 @@ respect_gitignore = true
 deep = false         # true = every scan is thoroughness-first (see triage.md); belongs in a CI-only config
 
 [detangle.lanes]
-nli = false
-jury = false
-screen = false       # whole-config LLM nomination sweep; implies jury
 typesafe = false     # calibrated typed pair judgments (needs TYPESAFE_API_KEY)
+jury = false         # experimental: LLM adjudication of candidate pairs
+screen = false       # experimental: whole-config LLM nomination sweep; implies jury
 
 [detangle.rules]
 DTR04 = false        # disable a rule entirely
@@ -148,14 +147,14 @@ your editor hooks and PR checks read. See [triage.md](triage.md).
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `nli` | bool | `false` | Enable the local NLI cross-encoder lane (needs `detangle[nli]`) |
-| `jury` | bool | `false` | Enable the LLM jury lane (needs any backend: the `claude` CLI, `ANTHROPIC_API_KEY`, or an OpenAI-compatible `base_url` — see [lanes.md](lanes.md)) |
-| `screen` | bool | `false` | Enable the whole-config screen sweep. **Implies `jury`** (the screen only nominates; the jury adjudicates its nominations). Also switches extraction to high-recall mode for the screen's benefit. |
-| `typesafe` | bool | `false` | Enable the TypeSafe lane: calibrated typed pair judgments (needs `TYPESAFE_API_KEY`; see [lanes.md](lanes.md)). Switches extraction to high-recall mode. Composes with `jury`: TypeSafe's uncertain band is what the jury then adjudicates. |
+| `typesafe` | bool | `false` | Enable the TypeSafe lane, the recommended thorough pass: calibrated typed pair judgments from TypeSafe's hosted API (needs `TYPESAFE_API_KEY`; sends instruction text to the API; see [lanes.md](lanes.md)). Switches extraction to high-recall mode. Composes with `jury`: TypeSafe's uncertain band is what the jury then adjudicates. |
+| `jury` | bool | `false` | **Experimental.** Enable the LLM jury lane (needs any backend: the `claude` CLI, `ANTHROPIC_API_KEY`, or an OpenAI-compatible `base_url`; see [lanes.md](lanes.md)) |
+| `screen` | bool | `false` | **Experimental.** Enable the whole-config screen sweep. **Implies `jury`** (the screen only nominates; the jury adjudicates its nominations). Also switches extraction to high-recall mode for the screen's benefit. |
 
-See [lanes.md](lanes.md). The `--nli` / `--jury` / `--screen` / `--typesafe` flags turn a lane
-**on** for one run; they cannot turn off a lane enabled in the file. Must be a table, else a
-config error.
+See [lanes.md](lanes.md). The `--typesafe` / `--jury` / `--screen` flags turn a lane **on** for
+one run; they cannot turn off a lane enabled in the file. Must be a table, else a config
+error. A leftover `nli` key from the removed NLI lane is ignored, and the report's notes say
+so.
 
 ### `[detangle.rules]` — table, default empty
 
@@ -201,7 +200,7 @@ The screen shares the jury's `backend` / `base_url` / `api_key_env` transport se
 | `model` | string | `"jev-latest"` | TypeSafe System One model id. |
 | `api_key_env` | string | `"TYPESAFE_API_KEY"` | Name of the env var holding the key (never the key itself). |
 | `endpoint` | string | `https://api.typesafe.ai/v1/systemone` | Evaluation endpoint. |
-| `pairs` | string | `"all"` | `all` = every co-activatable unit pair (O(n²), best recall); `candidates` = the deterministic lane's blocked pairs (cheaper). |
+| `pairs` | string | `"all"` | `all` = every co-activatable unit pair (grows with the square of the config; best recall on small configs); `candidates` = the deterministic lane's blocked pairs. Use `candidates` above about 100 units: more pairs means more cost and more false alarms, not more recall ([benchmark.md](benchmark.md)). |
 | `tau` | float | `0.7` | Conflict-probability threshold for emitting a finding. |
 | `strong` | float | `0.9` | At/above this a verdict is `warning`; below, `advisory`. Conditional-conflict and goal-tension verdicts are always `advisory`, like the jury's conditional verdicts. |
 | `uncertain_low` | float | `0.3` | Pairs with probability in `[uncertain_low, tau)` are handed to the jury lane when it is enabled. |
@@ -211,12 +210,6 @@ The screen shares the jury's `backend` / `base_url` / `api_key_env` transport se
 
 Thresholds must satisfy `0 <= uncertain_low <= tau <= strong <= 1`.
 
-
-### `[detangle.nli]` — table
-
-| key | type | default | meaning |
-|---|---|---|---|
-| `model` | string | `cross-encoder/nli-deberta-v3-small` | Hugging Face id of the NLI cross-encoder. Must have a 3-way (contradiction/entailment/neutral) head. |
 
 ### `[detangle.baseline]` — table
 
@@ -303,15 +296,14 @@ Full scan of `path` (default: `.`).
 | `--format {console,json,sarif,markdown}` | Output format (default `console`; `sarif` is SARIF 2.1.0 for GitHub code scanning) |
 | `--output PATH`, `-o PATH` | Write the report to a file instead of stdout. Quirk: combined with the default `console` format, the file receives the JSON rendering (console output is TTY-only). |
 | `--fail-on {info,advisory,warning,error}` | Override the config's `fail_on` for this run |
-| `--nli` | Enable the NLI lane for this run |
-| `--jury` | Enable the jury lane for this run |
-| `--screen` | Enable the screen lane for this run (implies `--jury`) |
 | `--typesafe` | Enable the TypeSafe lane for this run (needs `TYPESAFE_API_KEY`) |
-| `--deep` | Thoroughness-first run: every available lane (TypeSafe when `TYPESAFE_API_KEY` is set, NLI when installed, screen + jury), per-class screen sweeps (ten strong-model passes instead of one), jury cap lifted to 1000. Hours-scale; meant for scheduled CI. See [triage.md](triage.md). |
+| `--jury` | Experimental: enable the jury lane for this run |
+| `--screen` | Experimental: enable the screen lane for this run (implies `--jury`) |
+| `--deep` | Thoroughness-first run: every lane that has a key or backend (TypeSafe when `TYPESAFE_API_KEY` is set, screen + jury when an LLM backend is available), per-class screen sweeps (ten strong-model passes instead of one), jury cap lifted to 1000. Meant for scheduled CI. See [triage.md](triage.md). |
 | `--baseline [PATH]` | Use a baseline file for triage. Given without a value, means `.detangle-baseline.json` at the scan root (or `[detangle.baseline] path`). |
 | `--update-baseline` | Write the post-scan state back to the baseline: unseen findings recorded as `new`, disappeared ones stamped `missing_since`, prior verdicts kept. |
 | `--only-new` | Report only findings the baseline does not already answer: `new` entries and regressions. |
-| `--fail-on-new` | Exit non-zero **only** for `new`/regression findings at or above `fail_on` — known-but-`open` findings never block the build. The CI-gate companion to `--baseline`. |
+| `--fail-on-new` | Exit non-zero **only** for `new`/regression findings at or above `fail_on` — known-but-`open` findings never block the build. The CI-gate companion to `--baseline`. With no baseline file yet, every finding counts as new: create and commit the file first with `--update-baseline` (the run prints a note when the file is missing). |
 | `--no-soft` | Hide advisory/info findings (sets `include_soft = false`) |
 | `--select CODES` | Comma-separated rule codes to run **exclusively** (e.g. `DTC01,DTC03`). Unknown codes exit 2. Replaces any `[detangle.rules]` disables for the run. |
 | `-v`, `--verbose` | More detail in console output |

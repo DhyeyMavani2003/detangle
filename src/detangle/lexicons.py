@@ -4,7 +4,7 @@ Sources: NASA ARM imperative-strength ranking (shall > must > will > should),
 QuARS/Femmer requirements-smell indicator lists, de Marneffe's Category-1
 contradiction cues (antonymy, negation, numeric mismatch), and the
 agent-config domain itself. These lists gate *deterministic* detectors, so
-they are curated for precision: a miss costs recall (the NLI/jury lanes can
+they are curated for precision: a miss costs recall (the TypeSafe lane can
 recover it); a bad entry costs a false positive.
 """
 

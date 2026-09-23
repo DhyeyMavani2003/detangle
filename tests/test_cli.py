@@ -300,3 +300,13 @@ class TestDiffCommand:
         assert "could not compute git diff" in captured.err
         doc = json.loads(captured.out)
         assert "DTR05" in [f["code"] for f in doc["findings"]]
+
+
+def test_removed_nli_flag_is_accepted_and_reported(tmp_path: Path) -> None:
+    """Old CI scripts that pass --nli keep working; the report says the flag
+    was ignored rather than silently dropping it."""
+    make_clean_tree(tmp_path)
+    out = tmp_path / "r.json"
+    assert main(["scan", str(tmp_path), "--nli", "--format", "json", "-o", str(out)]) == 0
+    report = json.loads(out.read_text())
+    assert any("--nli is ignored" in w for w in report["warnings"])

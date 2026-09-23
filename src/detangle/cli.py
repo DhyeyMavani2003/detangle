@@ -35,9 +35,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="detangle",
         description=(
-            "Merge-conflict detection for English-as-code: finds conflicting, "
-            "contradictory, redundant, shadowed, and precedence-ambiguous "
-            "instructions across your agent configuration."
+            "A linter for AI agent instructions: finds contradictory, redundant, "
+            "shadowed, and precedence-ambiguous instructions across CLAUDE.md, "
+            "AGENTS.md, skills, Cursor rules, and Copilot instructions."
         ),
     )
     p.add_argument("--version", action="version", version=f"detangle {__version__}")
@@ -59,25 +59,31 @@ def _build_parser() -> argparse.ArgumentParser:
             default=None,
             help="exit non-zero at or above this severity (default: error)",
         )
-        sp.add_argument("--nli", action="store_true", help="enable the NLI lane")
-        sp.add_argument("--jury", action="store_true", help="enable the LLM jury lane")
-        sp.add_argument(
-            "--screen",
-            action="store_true",
-            help="enable the whole-config LLM screen sweep (implies --jury; strongest model)",
-        )
         sp.add_argument(
             "--typesafe",
             action="store_true",
-            help="enable the TypeSafe lane: calibrated pairwise conflict judgments "
-            "(needs TYPESAFE_API_KEY)",
+            help="add the TypeSafe lane: calibrated pairwise conflict judgments from "
+            "a hosted API (needs TYPESAFE_API_KEY; sends instruction text to TypeSafe)",
+        )
+        sp.add_argument(
+            "--jury",
+            action="store_true",
+            help="experimental: adjudicate candidate pairs with an LLM jury",
+        )
+        sp.add_argument(
+            "--screen",
+            action="store_true",
+            help="experimental: whole-config LLM sweep that nominates pairs for the "
+            "jury (implies --jury; strongest model)",
         )
         sp.add_argument(
             "--deep",
             action="store_true",
-            help="thoroughness-first pass: every available lane, per-class screen "
-            "sweeps, jury cap lifted — built for overnight CI (hours are fine)",
+            help="thoroughness-first pass for overnight CI: every lane that has a "
+            "key or backend, per-class screen sweeps, jury cap lifted",
         )
+        # removed lane: still parsed so old CI scripts keep working, but ignored
+        sp.add_argument("--nli", action="store_true", help=argparse.SUPPRESS)
         sp.add_argument(
             "--baseline",
             nargs="?",
@@ -274,7 +280,7 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
         print(f"error: cannot read config: {e}", file=sys.stderr)
         raise SystemExit(2) from None
     if args.nli:
-        cfg.lane_nli = True
+        cfg.notes.append("--nli is ignored — the NLI lane was removed")
     if args.jury:
         cfg.lane_jury = True
     if args.screen:
@@ -313,6 +319,19 @@ def _run_scan(args: argparse.Namespace) -> ScanResult:
         if cfg.baseline_path is None:
             print("error: --fail-on-new requires --baseline", file=sys.stderr)
             raise SystemExit(2)
+    if (cfg.fail_on_new or cfg.only_new) and cfg.baseline_path is not None:
+        bfile = cfg.baseline_path
+        if not bfile.is_absolute():
+            bfile = cfg.root / bfile
+        if not bfile.exists():
+            # without a baseline every finding is "new": a gate adopted on an
+            # existing repo would fail on the whole backlog with no hint why
+            print(
+                f"note: no baseline file at {bfile} — every finding counts as new. "
+                f"Create it once with `detangle scan {args.path} --baseline "
+                "--update-baseline`, then commit it.",
+                file=sys.stderr,
+            )
     if args.no_soft:
         cfg.include_soft = False
     if args.fail_on:

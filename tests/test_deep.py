@@ -84,9 +84,6 @@ class _ScriptedDeepBackend(Backend):
 
 def _install(monkeypatch, backend: Backend) -> None:
     monkeypatch.setattr("detangle.lanes.backends.make_backend", lambda cfg, role="jury": backend)
-    # deep mode may switch the NLI lane on in the pipeline; keep these tests
-    # hermetic (no model load) — deep's screen behavior is what's under test
-    monkeypatch.setattr("detangle.lanes.nli.run_nli_lane", lambda cfg, ctx, findings: findings)
 
 
 def _deep_config(root: Path, cache_dir: Path, deep: bool = True) -> Config:

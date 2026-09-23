@@ -201,14 +201,14 @@ def test_rate_limit_is_retried(tmp_path: Path, server, monkeypatch):
 
 def test_uncertain_band_goes_to_jury_channel(tmp_path: Path, server, monkeypatch):
     """A pair below tau but above uncertain_low is handed to the jury through
-    the NLI channel; confident verdicts never are."""
+    the jury queue; confident verdicts never are."""
     scripted, endpoint = server
     monkeypatch.setenv("TS_TEST_KEY", "test-key")
     write_tree(tmp_path, TREE)
     captured = {}
 
     def fake_jury(cfg, ctx, findings):
-        captured["band"] = list(getattr(ctx, "nli_not_cleared", None) or [])
+        captured["band"] = list(ctx.jury_queue or [])
         return findings
 
     monkeypatch.setattr("detangle.lanes.jury.run_jury_lane", fake_jury)
@@ -231,7 +231,7 @@ def test_solo_rejudge_clears_but_needs_both_passes_to_emit(tmp_path: Path, serve
     captured = {}
 
     def fake_jury(cfg, ctx, findings):
-        captured["band"] = list(getattr(ctx, "nli_not_cleared", None) or [])
+        captured["band"] = list(ctx.jury_queue or [])
         return findings
 
     monkeypatch.setattr("detangle.lanes.jury.run_jury_lane", fake_jury)
@@ -288,7 +288,7 @@ def test_malformed_responses_end_the_lane_cleanly_and_are_never_cached(
     captured = {}
 
     def fake_jury(cfg, ctx, findings):
-        captured["band"] = getattr(ctx, "nli_not_cleared", "untouched")
+        captured["band"] = "untouched" if ctx.jury_queue is None else ctx.jury_queue
         return findings
 
     monkeypatch.setattr("detangle.lanes.jury.run_jury_lane", fake_jury)
@@ -376,57 +376,6 @@ def test_pair_cap_marks_the_lane_incomplete(tmp_path: Path, server, monkeypatch)
     r = scan(_cfg(tmp_path / "capped", endpoint, typesafe_max_pairs=1))
     assert any("pair cap reached" in n for n in r.corpus.notes)
     assert any("lane incomplete" in n for n in r.corpus.notes)
-
-
-def test_nli_merges_with_the_typesafe_band_and_skips_cleared_pairs(
-    tmp_path: Path, server, monkeypatch
-):
-    """With --typesafe --nli --jury the NLI filter neither drops TypeSafe's
-    band (when it would clear those pairs) nor re-adds pairs TypeSafe cleared
-    (when it would flag them): the jury sees exactly TypeSafe's band."""
-    scripted, endpoint = server
-    monkeypatch.setenv("TS_TEST_KEY", "test-key")
-    seen: dict = {}
-
-    class FakeScorer:
-        def __init__(self, model_name=None):
-            pass
-
-        def contradiction_scores(self, pairs):
-            seen.setdefault("scored", []).extend(pairs)
-            return [seen["score"]] * len(pairs)
-
-    monkeypatch.setattr("detangle.lanes.nli.NliScorer", FakeScorer)
-    captured = {}
-
-    def fake_jury(cfg, ctx, findings):
-        captured["band"] = list(getattr(ctx, "nli_not_cleared", None) or [])
-        return findings
-
-    monkeypatch.setattr("detangle.lanes.jury.run_jury_lane", fake_jury)
-    for score in (0.0, 0.99):
-        seen["score"] = score
-        root = tmp_path / f"nli-{score}"
-        write_tree(root, TREE)
-        # tau above the scripted mass: the lint/test pair is TypeSafe's band,
-        # every other pair is cleared
-        r = scan(
-            _cfg(
-                root,
-                endpoint,
-                lane_nli=True,
-                lane_jury=True,
-                typesafe_tau=0.99,
-                typesafe_strong=0.995,
-            )
-        )
-        assert any("NLI lane:" in n for n in r.corpus.notes)
-        assert [round(m, 2) for _, m in captured["band"]] == [0.97], (score, captured["band"])
-    # whatever NLI scored (it sees normalized text), it never saw a pair
-    # TypeSafe had cleared
-    for a, b in seen.get("scored", []):
-        both = (a + " " + b).lower()
-        assert "linter first" in both and "start with the test suite" in both
 
 
 def test_verdict_uses_min_mass_and_mean_class_and_detects_redundancy():

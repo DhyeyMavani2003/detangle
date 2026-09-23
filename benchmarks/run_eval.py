@@ -79,15 +79,14 @@ def scan_tree(
 ) -> ScanResult:
     """Materialize into a temp dir and run the pipeline.
 
-    ``lanes`` may include "nli", "jury", "screen" (screen implies jury)
-    and/or "typesafe". Jury calls are capped per tree by ``jury_max_pairs``; model
+    ``lanes`` may include "typesafe", "jury" and "screen" (screen implies
+    jury). Jury calls are capped per tree by ``jury_max_pairs``; model
     overrides are backend-shaped strings ("sonnet", "opus", ...).
     """
     with tempfile.TemporaryDirectory(prefix="detangle-bench-") as td:
         root = Path(td)
         materialize(tree, root)
         cfg = Config(root=root)
-        cfg.lane_nli = "nli" in lanes
         cfg.lane_jury = "jury" in lanes
         cfg.lane_screen = "screen" in lanes
         cfg.lane_typesafe = "typesafe" in lanes
@@ -376,8 +375,8 @@ def evaluate_holdout(
 ) -> dict:
     """Run the hand-authored holdout set; returns the JSON-serializable report.
 
-    Pass ``lanes=("nli", "jury")`` (or ``("nli", "screen")`` for the full
-    cascade) to measure the hybrid pipelines instead of the deterministic
+    Pass ``lanes=("typesafe",)`` (or ``("screen", "jury")`` for the
+    experimental LLM cascade) to measure a lane instead of the deterministic
     lane alone; model overrides are backend-shaped ("sonnet", "opus", ...).
     """
     t0 = time.perf_counter()
@@ -621,8 +620,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--lanes",
         default="",
-        help='comma-separated optional lanes for the HOLDOUT scans, e.g. "nli,jury" or '
-        '"typesafe" (the mutation suite always runs deterministic-only; jury needs a '
+        help='comma-separated optional lanes for the HOLDOUT scans: "typesafe", "jury", '
+        '"screen" (the mutation suite always runs deterministic-only; jury needs a '
         "backend, typesafe needs TYPESAFE_API_KEY)",
     )
     p.add_argument("--jury-model", default="", help="jury model override (backend-shaped)")
@@ -664,6 +663,9 @@ def main(argv: list[str] | None = None) -> int:
         print(render_table(mutation_report))
         print()
     lanes = tuple(x.strip() for x in args.lanes.split(",") if x.strip())
+    unknown = set(lanes) - {"typesafe", "jury", "screen"}
+    if unknown:
+        p.error(f"unknown lane(s) {', '.join(sorted(unknown))}; choose from typesafe, jury, screen")
     case_ids = [x.strip() for x in args.cases.split(",")] if args.cases else None
     holdout_report = evaluate_holdout(
         case_ids=case_ids,

@@ -26,7 +26,7 @@ class TestDefaults:
         cfg = load_config(tmp_path)
         assert cfg.root == tmp_path.resolve()
         assert cfg.ecosystems == ("claude-code", "agents-md", "cursor", "copilot")
-        assert cfg.lane_nli is False
+        assert cfg.lane_typesafe is False
         assert cfg.lane_jury is False
         assert cfg.include_soft is True
         assert cfg.fail_on == Severity.ERROR
@@ -88,13 +88,13 @@ class TestTableShapes:
             "[detangle]\n"
             'ecosystems = ["claude-code"]\n'
             "[detangle.lanes]\n"
-            "nli = true\n"
+            "typesafe = true\n"
             "[detangle.rules]\n"
             "DTC01 = false\n",
         )
         cfg = load_config(tmp_path)
         assert cfg.ecosystems == ("claude-code",)
-        assert cfg.lane_nli is True
+        assert cfg.lane_typesafe is True
         assert cfg.disabled_rules == frozenset({"DTC01"})
 
 
@@ -105,15 +105,28 @@ class TestTableShapes:
 
 class TestLanes:
     def test_lane_booleans(self, tmp_path: Path) -> None:
-        write_config(tmp_path, "[lanes]\nnli = true\njury = true\n")
+        write_config(tmp_path, "[lanes]\ntypesafe = true\njury = true\n")
         cfg = load_config(tmp_path)
-        assert cfg.lane_nli is True
+        assert cfg.lane_typesafe is True
         assert cfg.lane_jury is True
+        assert cfg.notes == []
+
+    def test_removed_nli_lane_is_ignored_with_a_note(self, tmp_path: Path) -> None:
+        """Configs written for the removed NLI lane keep loading; the scan
+        says the keys were ignored instead of failing or silently dropping them."""
+        write_config(
+            tmp_path,
+            '[lanes]\nnli = true\njury = true\n[nli]\nmodel = "cross-encoder/x"\n',
+        )
+        cfg = load_config(tmp_path)
+        assert cfg.lane_jury is True
+        assert not hasattr(cfg, "lane_nli")
+        assert len(cfg.notes) == 2 and all("NLI lane was removed" in n for n in cfg.notes)
 
     def test_lanes_default_off(self, tmp_path: Path) -> None:
         write_config(tmp_path, "[lanes]\n")
         cfg = load_config(tmp_path)
-        assert cfg.lane_nli is False
+        assert cfg.lane_typesafe is False
         assert cfg.lane_jury is False
 
     def test_lanes_must_be_a_table(self, tmp_path: Path) -> None:

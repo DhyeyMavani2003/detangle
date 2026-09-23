@@ -147,7 +147,7 @@ class TestDeepExpansion:
         cfg.deep = True
         cfg.typesafe_api_key_env = "DETANGLE_TEST_NO_SUCH_KEY"  # never a developer's real key
         result = scan(cfg)  # lanes skip gracefully without backends/models
-        assert cfg.lane_screen and cfg.lane_jury and cfg.lane_nli
+        assert cfg.lane_screen and cfg.lane_jury and cfg.lane_typesafe
         assert cfg.jury_max_pairs >= 1000
         assert result is not None
 
@@ -185,6 +185,20 @@ class TestBaselineCli:
         captured = capsys.readouterr()
         assert "no baseline entries" in captured.out
         assert "no baseline file" in captured.err and "--update-baseline" in captured.err
+
+    def test_gate_without_a_baseline_file_says_so(self, tmp_path: Path, capsys):
+        """--fail-on-new with no baseline file treats the whole backlog as new;
+        the run must say why instead of failing silently."""
+        write_tree(tmp_path, CONFLICT_TREE)
+        assert main(["scan", str(tmp_path), "--baseline", "--fail-on-new"]) == 1
+        err = capsys.readouterr().err
+        assert "no baseline file" in err and "--update-baseline" in err
+
+        # once the baseline exists, the note is gone
+        self._seed(tmp_path)
+        capsys.readouterr()
+        main(["scan", str(tmp_path), "--baseline", "--fail-on-new", "--format", "json"])
+        assert "no baseline file" not in capsys.readouterr().err
 
     def test_list_set_prune_cycle(self, tmp_path: Path, capsys):
         bpath = self._seed(tmp_path)
